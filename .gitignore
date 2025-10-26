@@ -75,4 +75,4 @@ backend/seeta/lib/
 
 # Temporary files
 *.tmp
-*.temp
+*.temp.npm-cache/
