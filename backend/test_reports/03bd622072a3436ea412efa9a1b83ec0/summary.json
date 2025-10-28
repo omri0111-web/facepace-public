@@ -1,0 +1,600 @@
+{
+  "videoName": "32E79F3E-450C-479F-9A9E-72FBC33AE72A.MP4",
+  "peopleRecognized": [
+    "omri 26.10",
+    "omri shamai"
+  ],
+  "framesProcessed": 20,
+  "totalFacesDetected": 48,
+  "unknownFacesDetected": 42,
+  "details": [
+    {
+      "timestamp": 0.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 240.48928833007812,
+        "y": 326.4992370605469,
+        "width": 39.817626953125,
+        "height": 55.303619384765625
+      },
+      "image_path": "faces/unknown/ts0_1ff90e9e44fc4588853b9198b9d08bf1.jpg"
+    },
+    {
+      "timestamp": 0.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 104.1954574584961,
+        "y": 410.0663146972656,
+        "width": 63.655616760253906,
+        "height": 35.8656005859375
+      },
+      "image_path": "faces/unknown/ts0_3cc32d4e46904f7eb37f577fb6baad7e.jpg"
+    },
+    {
+      "timestamp": 0.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 42.15437698364258,
+        "y": 372.6954345703125,
+        "width": 57.92387771606445,
+        "height": 42.289031982421875
+      },
+      "image_path": "faces/unknown/ts500_75348d3ac6524de88f32b80b3fdc34f5.jpg"
+    },
+    {
+      "timestamp": 0.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 235.1968231201172,
+        "y": 305.4656066894531,
+        "width": 44.61216735839844,
+        "height": 61.350616455078125
+      },
+      "image_path": "faces/unknown/ts500_af3bfb0cb63a4009adfd6214d7dc2fe9.jpg"
+    },
+    {
+      "timestamp": 1.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 211.3708953857422,
+        "y": 302.28045654296875,
+        "width": 45.09550476074219,
+        "height": 60.97845458984375
+      },
+      "image_path": "faces/unknown/ts1000_2d2cf74293004c06b486d730c8d81832.jpg"
+    },
+    {
+      "timestamp": 1.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 4.527426242828369,
+        "y": 331.624267578125,
+        "width": 53.580113887786865,
+        "height": 53.128814697265625
+      },
+      "image_path": "faces/unknown/ts1000_ce4cb1f02f234057977f38a3fbd82ba1.jpg"
+    },
+    {
+      "timestamp": 1.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 215.61309814453125,
+        "y": 293.9885559082031,
+        "width": 41.114990234375,
+        "height": 53.1695556640625
+      },
+      "image_path": "faces/unknown/ts1500_1b1bdf7016a347a8af8b496a3f569758.jpg"
+    },
+    {
+      "timestamp": 1.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 61.755516052246094,
+        "y": 516.917236328125,
+        "width": 104.46611785888672,
+        "height": 136.49810791015625
+      },
+      "image_path": "faces/unknown/ts1500_ef1da28fd86f4d679751061722c318da.jpg"
+    },
+    {
+      "timestamp": 1.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 59.73789596557617,
+        "y": 313.51666259765625,
+        "width": 37.40084457397461,
+        "height": 58.7227783203125
+      },
+      "image_path": "faces/unknown/ts1500_c607799d2a1b4aa88500a50e729fab9e.jpg"
+    },
+    {
+      "timestamp": 2.0,
+      "type": "recognized",
+      "person_id": "1761503005601",
+      "person_name": "omri 26.10",
+      "confidence": 0.5341189503669739,
+      "box": {
+        "x": 27.625385284423828,
+        "y": 314.68560791015625,
+        "width": 52.487918853759766,
+        "height": 61.039794921875
+      },
+      "image_path": "faces/known/ts2000_1ebd2c6ff69345f4b3769ed0fcfff87a.jpg"
+    },
+    {
+      "timestamp": 2.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 110.06787872314453,
+        "y": 516.4050903320312,
+        "width": 92.50176239013672,
+        "height": 121.62078857421875
+      },
+      "image_path": "faces/unknown/ts2000_4072b6758bc94689ae114eae12e25901.jpg"
+    },
+    {
+      "timestamp": 2.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 164.5219268798828,
+        "y": 303.3958435058594,
+        "width": 41.68467712402344,
+        "height": 53.36297607421875
+      },
+      "image_path": "faces/unknown/ts2000_1e3e021495fa449593a026e120d26511.jpg"
+    },
+    {
+      "timestamp": 2.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 27.625385284423828,
+        "y": 314.68560791015625,
+        "width": 52.487918853759766,
+        "height": 61.039794921875
+      },
+      "image_path": "faces/unknown/ts2000_563cc08936894e9bafe31d83be756e6b.jpg"
+    },
+    {
+      "timestamp": 2.5,
+      "type": "recognized",
+      "person_id": "1761503005601",
+      "person_name": "omri 26.10",
+      "confidence": 0.4835265278816223,
+      "box": {
+        "x": 34.70600891113281,
+        "y": 305.9398498535156,
+        "width": 51.601402282714844,
+        "height": 63.51611328125
+      },
+      "image_path": "faces/known/ts2500_2f8e97296e1244cdba26fe97fbe78d12.jpg"
+    },
+    {
+      "timestamp": 2.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 232.67539978027344,
+        "y": 502.76861572265625,
+        "width": 93.98646545410156,
+        "height": 126.76861572265625
+      },
+      "image_path": "faces/unknown/ts2500_bcc7e4d1ce3b4ccbaa4ac96697e699d0.jpg"
+    },
+    {
+      "timestamp": 2.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 165.77474975585938,
+        "y": 304.2096252441406,
+        "width": 49.27130126953125,
+        "height": 56.428619384765625
+      },
+      "image_path": "faces/unknown/ts2500_cfd1fbe638124f82abcd022822019f8d.jpg"
+    },
+    {
+      "timestamp": 2.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 34.70600891113281,
+        "y": 305.9398498535156,
+        "width": 51.601402282714844,
+        "height": 63.51611328125
+      },
+      "image_path": "faces/unknown/ts2500_7909721b8c5541e4b36382603185232c.jpg"
+    },
+    {
+      "timestamp": 3.0,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.4724690020084381,
+      "box": {
+        "x": 46.53074645996094,
+        "y": 322.94805908203125,
+        "width": 60.192527770996094,
+        "height": 60.857452392578125
+      },
+      "image_path": "faces/known/ts3000_d8d66de8aaed4769a8b598e2c296ad87.jpg"
+    },
+    {
+      "timestamp": 3.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 399.69146728515625,
+        "y": 501.28253173828125,
+        "width": 80.15982055664062,
+        "height": 129.13409423828125
+      },
+      "image_path": "faces/unknown/ts3000_9ef6f471a47140c18a2a34c927726b0b.jpg"
+    },
+    {
+      "timestamp": 3.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": -3.6914262771606445,
+        "y": 542.2140502929688,
+        "width": 64.25332355499268,
+        "height": 80.942626953125
+      },
+      "image_path": "faces/unknown/ts3000_efa5a9b9c5ce498486f9c30b1a59f8eb.jpg"
+    },
+    {
+      "timestamp": 3.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 197.14700317382812,
+        "y": 288.4942626953125,
+        "width": 44.61090087890625,
+        "height": 59.349609375
+      },
+      "image_path": "faces/unknown/ts3000_61533197801e428f9eee7cacb9879129.jpg"
+    },
+    {
+      "timestamp": 3.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 46.53074645996094,
+        "y": 322.94805908203125,
+        "width": 60.192527770996094,
+        "height": 60.857452392578125
+      },
+      "image_path": "faces/unknown/ts3000_8538daa35fa64c87a8ae687c83345f80.jpg"
+    },
+    {
+      "timestamp": 3.5,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.44913533329963684,
+      "box": {
+        "x": 125.66268920898438,
+        "y": 311.4039611816406,
+        "width": 50.52076721191406,
+        "height": 65.30484008789062
+      },
+      "image_path": "faces/known/ts3500_e7e87c11939849488ce292f977e0d7a6.jpg"
+    },
+    {
+      "timestamp": 3.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 182.94081115722656,
+        "y": 497.7994384765625,
+        "width": 54.910308837890625,
+        "height": 68.49627685546875
+      },
+      "image_path": "faces/unknown/ts3500_f4bbae5b63d849cea44be43b6bc7350a.jpg"
+    },
+    {
+      "timestamp": 3.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 236.40921020507812,
+        "y": 298.6759338378906,
+        "width": 40.639007568359375,
+        "height": 60.99542236328125
+      },
+      "image_path": "faces/unknown/ts3500_d668b637097f431badd49d2e30c6bfdd.jpg"
+    },
+    {
+      "timestamp": 3.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 125.66268920898438,
+        "y": 311.4039611816406,
+        "width": 50.52076721191406,
+        "height": 65.30484008789062
+      },
+      "image_path": "faces/unknown/ts3500_ff09b8547a3743a2a8afa6aaf100ce5c.jpg"
+    },
+    {
+      "timestamp": 4.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 270.5782775878906,
+        "y": 487.3207702636719,
+        "width": 52.493255615234375,
+        "height": 63.884368896484375
+      },
+      "image_path": "faces/unknown/ts4000_de10c18ca0124ffeb9a50c70b952e212.jpg"
+    },
+    {
+      "timestamp": 4.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 228.0766143798828,
+        "y": 298.5104675292969,
+        "width": 39.95973205566406,
+        "height": 54.99798583984375
+      },
+      "image_path": "faces/unknown/ts4000_a6b607fce5a74369ac50689643210504.jpg"
+    },
+    {
+      "timestamp": 4.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 131.86341857910156,
+        "y": 309.0735778808594,
+        "width": 41.23492431640625,
+        "height": 53.661895751953125
+      },
+      "image_path": "faces/unknown/ts4000_639baabc9a6049b390c541bcc5dc24bb.jpg"
+    },
+    {
+      "timestamp": 4.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 286.5625305175781,
+        "y": 317.7117919921875,
+        "width": 39.203338623046875,
+        "height": 47.794708251953125
+      },
+      "image_path": "faces/unknown/ts4500_04e8ef5f08234585b7b07cd9ecf6f192.jpg"
+    },
+    {
+      "timestamp": 4.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 200.19761657714844,
+        "y": 315.5422668457031,
+        "width": 33.03828430175781,
+        "height": 45.9285888671875
+      },
+      "image_path": "faces/unknown/ts4500_d177c8aeacda4954a23c92c5b26b4bf0.jpg"
+    },
+    {
+      "timestamp": 4.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 410.22174072265625,
+        "y": 489.34686279296875,
+        "width": 52.5933837890625,
+        "height": 64.75787353515625
+      },
+      "image_path": "faces/unknown/ts4500_c7b04d74db56471fbc7629a18c1ca7b6.jpg"
+    },
+    {
+      "timestamp": 5.0,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.5379500389099121,
+      "box": {
+        "x": 178.43258666992188,
+        "y": 311.6820983886719,
+        "width": 46.448211669921875,
+        "height": 57.455963134765625
+      },
+      "image_path": "faces/known/ts5000_c4e1d89cf83943c1835385e61531fc74.jpg"
+    },
+    {
+      "timestamp": 5.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 295.90692138671875,
+        "y": 322.9422302246094,
+        "width": 45.11956787109375,
+        "height": 54.01910400390625
+      },
+      "image_path": "faces/unknown/ts5000_0ff703c4f842408184fd144edcac3e01.jpg"
+    },
+    {
+      "timestamp": 5.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 178.43258666992188,
+        "y": 311.6820983886719,
+        "width": 46.448211669921875,
+        "height": 57.455963134765625
+      },
+      "image_path": "faces/unknown/ts5000_5c2b0b0419f94d0dbd37e76ca1ac4fc7.jpg"
+    },
+    {
+      "timestamp": 5.5,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.45491617918014526,
+      "box": {
+        "x": 39.247161865234375,
+        "y": 324.7992858886719,
+        "width": 78.78852844238281,
+        "height": 67.291259765625
+      },
+      "image_path": "faces/known/ts5500_8ba33ca87d924e6b81f663502ffe3cfc.jpg"
+    },
+    {
+      "timestamp": 5.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 39.247161865234375,
+        "y": 324.7992858886719,
+        "width": 78.78852844238281,
+        "height": 67.291259765625
+      },
+      "image_path": "faces/unknown/ts5500_4f050a28729f4f868e5c25fb12ad26ca.jpg"
+    },
+    {
+      "timestamp": 5.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 281.3454895019531,
+        "y": 290.4267272949219,
+        "width": 52.358642578125,
+        "height": 64.74734497070312
+      },
+      "image_path": "faces/unknown/ts5500_1583290306a048d9950c690b88536897.jpg"
+    },
+    {
+      "timestamp": 6.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 266.1896667480469,
+        "y": 266.55120849609375,
+        "width": 64.12228393554688,
+        "height": 78.24502563476562
+      },
+      "image_path": "faces/unknown/ts6000_eaf3b151165c46e1b85e5dbe6c3c6212.jpg"
+    },
+    {
+      "timestamp": 6.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": -33.73161697387695,
+        "y": 341.9183044433594,
+        "width": 88.03800582885742,
+        "height": 70.76675415039062
+      },
+      "image_path": "faces/unknown/ts6000_0c222a165fad49e28bf7afe60901e91a.jpg"
+    },
+    {
+      "timestamp": 6.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 242.45352172851562,
+        "y": 230.91209411621094,
+        "width": 66.32443237304688,
+        "height": 94.67109680175781
+      },
+      "image_path": "faces/unknown/ts6500_8578fb8e83f44b02a4153ec82eb97d5a.jpg"
+    },
+    {
+      "timestamp": 7.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 220.096923828125,
+        "y": 263.6787414550781,
+        "width": 70.02169799804688,
+        "height": 107.50955200195312
+      },
+      "image_path": "faces/unknown/ts7000_c11a6fd9cd7c46dab6866f02e468f0ce.jpg"
+    },
+    {
+      "timestamp": 7.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 175.61932373046875,
+        "y": 262.9640197753906,
+        "width": 82.93374633789062,
+        "height": 105.90621948242188
+      },
+      "image_path": "faces/unknown/ts7500_3bd89bf82ed04f4c88735742852d3dd7.jpg"
+    },
+    {
+      "timestamp": 8.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 305.92449951171875,
+        "y": 198.15919494628906,
+        "width": 86.84625244140625,
+        "height": 122.56581115722656
+      },
+      "image_path": "faces/unknown/ts8000_72ef146cd70240a9955f10ca4faf5fe0.jpg"
+    },
+    {
+      "timestamp": 8.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 320.87322998046875,
+        "y": 194.1505126953125,
+        "width": 57.966461181640625,
+        "height": 93.69256591796875
+      },
+      "image_path": "faces/unknown/ts8500_99288af4978a4a1ca3ae17428b5f4235.jpg"
+    },
+    {
+      "timestamp": 9.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 229.7576141357422,
+        "y": 269.4147644042969,
+        "width": 46.82991027832031,
+        "height": 76.232666015625
+      },
+      "image_path": "faces/unknown/ts9000_679be5750d6e48248c0d802b897f9895.jpg"
+    },
+    {
+      "timestamp": 9.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 227.4105224609375,
+        "y": 299.6445617675781,
+        "width": 38.189056396484375,
+        "height": 72.59817504882812
+      },
+      "image_path": "faces/unknown/ts9500_8a3ffd8649a44878ace311c72dc11012.jpg"
+    },
+    {
+      "timestamp": 9.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 48.259742736816406,
+        "y": 332.282470703125,
+        "width": 42.537689208984375,
+        "height": 38.283905029296875
+      },
+      "image_path": "faces/unknown/ts9500_75524bc2afeb4046a8e44b7094aa4c86.jpg"
+    }
+  ]
+}

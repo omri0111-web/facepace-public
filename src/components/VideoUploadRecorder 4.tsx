@@ -46,6 +46,8 @@ export const VideoUploadRecorder: React.FC<VideoUploadRecorderProps> = ({
   const [recognizedIds, setRecognizedIds] = useState<string[]>([]);
   const [error, setError] = useState<string>('');
   const [showPreview] = useState(false);
+  const [reportId, setReportId] = useState<string | null>(null);
+  const [reportDownloadUrl, setReportDownloadUrl] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -94,7 +96,14 @@ export const VideoUploadRecorder: React.FC<VideoUploadRecorderProps> = ({
       // If we have a group selected, also do recognition
       if (selectedGroupId && detectResult.faces.length > 0) {
         try {
-          const recognizeResult = await backendRecognitionService.recognizeFromDataURL(dataUrl, selectedGroupId);
+          const recognizeResult = await backendRecognitionService.recognizeFromDataURL(
+            dataUrl,
+            {
+              groupId: selectedGroupId || undefined,
+              reportId: reportId || undefined,
+              timestamp,
+            }
+          );
           
           // Update recognized faces
           const facesWithTimestamp = recognizeResult.map(face => ({
@@ -123,7 +132,7 @@ export const VideoUploadRecorder: React.FC<VideoUploadRecorderProps> = ({
     } catch (error) {
       console.error('Frame processing error:', error);
     }
-  }, [selectedGroupId, captureFrame, onFaceCountChange, onRecognizedIdsChange]);
+  }, [selectedGroupId, captureFrame, onFaceCountChange, onRecognizedIdsChange, reportId]);
 
   const startProcessing = useCallback(() => {
     if (!videoRef.current || !videoFile) return;
@@ -132,12 +141,19 @@ export const VideoUploadRecorder: React.FC<VideoUploadRecorderProps> = ({
     setDetectedBoxes([]);
     setRecognizedFaces([]);
     setRecognizedIds([]);
+    setReportDownloadUrl(null);
 
     const v = videoRef.current;
     // Ensure playback so currentTime advances
     try { v.muted = true; v.play().catch(() => {}); } catch {}
 
     lastProcessedMsRef.current = 0;
+    // Start backend test report
+    backendRecognitionService.startTestReport(videoFile.name).then(id => {
+      setReportId(id);
+    }).catch(() => {
+      setReportId(null);
+    });
 
     const tick = () => {
       if (!isRecording) {
@@ -170,6 +186,10 @@ export const VideoUploadRecorder: React.FC<VideoUploadRecorderProps> = ({
       rafIdRef.current = null;
     }
     setIsProcessing(false);
+    // Finalize backend test report and expose download link
+    backendRecognitionService.finalizeTestReport()
+      .then(() => setReportDownloadUrl(backendRecognitionService.getReportDownloadUrl()))
+      .catch(() => {});
   }, []);
 
   // Cleanup on unmount
@@ -297,6 +317,17 @@ export const VideoUploadRecorder: React.FC<VideoUploadRecorderProps> = ({
             <div>📹 Upload → 👥 Select Group → 🎬 Start Recording</div>
           </div>
         </div>
+        {reportDownloadUrl && (
+          <div className="mt-3">
+            <a
+              href={reportDownloadUrl}
+              className="inline-flex items-center px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+              download
+            >
+              Download Test Report (ZIP)
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Hidden canvas for frame capture */}

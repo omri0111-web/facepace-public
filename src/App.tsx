@@ -20,6 +20,8 @@ export interface AttendanceRecordType {
   guideName?: string; // Which guide recorded this
   location?: string; // Where the attendance was taken
   activity?: string; // What activity was being attended
+  // IDs automatically detected by the recognizer when the session finished
+  autoDetectedIds?: string[];
   security?: {
     transportStatus:
       | "bus"
@@ -1132,23 +1134,9 @@ function RecordDetailsModal({
     groupMembers.includes(person.id),
   );
 
-  // Reconstruct detection logic to show who was automatically detected
-  const detectedPeopleNames = groupPeople
-    .slice(0, Math.max(1, Math.floor(groupPeople.length * 0.5)))
-    .map((person) =>
-      person.name
-        .split(" ")
-        .map((n) => n[0] + n.slice(1, 2) + ".")
-        .join(" "),
-    );
-
-  const detectedPeople = groupPeople.filter((person) => {
-    const shortName = person.name
-      .split(" ")
-      .map((n) => n[0] + n.slice(1, 2) + ".")
-      .join(" ");
-    return detectedPeopleNames.includes(shortName);
-  });
+  // Determine who was auto-detected from the recorded autoDetectedIds stored at record time
+  const autoDetectedIdSet = new Set(record.autoDetectedIds || []);
+  const detectedPeople = groupPeople.filter((p) => autoDetectedIdSet.has(p.id));
 
   // People manually marked present
   const manuallyPresentPeople = groupPeople.filter(
@@ -1164,11 +1152,7 @@ function RecordDetailsModal({
 
   // Missing people (not detected and not manually marked present)
   const missingPeople = groupPeople.filter((person) => {
-    const shortName = person.name
-      .split(" ")
-      .map((n) => n[0] + n.slice(1, 2) + ".")
-      .join(" ");
-    const isDetected = detectedPeopleNames.includes(shortName);
+    const isDetected = autoDetectedIdSet.has(person.id);
     const isMarkedPresent =
       record.manualAttendance?.[person.id] === "present";
     return !isDetected && !isMarkedPresent;
@@ -2007,12 +1991,15 @@ export default function App() {
 
       if (missingCount > 0) {
         // Show missing people confirmation
+        const inGroup = selectedGroup?.members || [];
+        const autoIds = Array.from(recognizedSessionIds).filter((id): id is string => typeof id === 'string' && inGroup.includes(id));
         const pendingRecordData = {
           id: Date.now().toString(),
           timestamp: new Date(),
           detectedCount: totalDetected,
           totalCapacity: actualGroupSize,
           groupName: selectedGroupName,
+          autoDetectedIds: autoIds,
         };
 
         setPendingRecord(pendingRecordData);
@@ -2020,12 +2007,15 @@ export default function App() {
         setShowMissingPeopleModal(true);
       } else {
         // No missing people, save record directly
+        const inGroup = selectedGroup?.members || [];
+        const autoIds = Array.from(recognizedSessionIds).filter((id): id is string => typeof id === 'string' && inGroup.includes(id));
         const newRecord: AttendanceRecordType = {
           id: Date.now().toString(),
           timestamp: new Date(),
           detectedCount: totalDetected,
           totalCapacity: actualGroupSize,
           groupName: selectedGroupName,
+          autoDetectedIds: autoIds,
           finalPresentCount: totalDetected,
         };
 

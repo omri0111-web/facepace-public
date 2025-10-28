@@ -55,6 +55,7 @@ async function toDataURLFromElement(el: HTMLVideoElement | HTMLImageElement | HT
 
 class BackendRecognitionService {
   private initialized = false;
+  private activeReportId: string | null = null;
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -119,7 +120,7 @@ class BackendRecognitionService {
 
   async recognizeFromDataURL(
     dataURL: string,
-    opts?: { filterByPersonIds?: string[]; groupId?: string }
+    opts?: { filterByPersonIds?: string[]; groupId?: string; reportId?: string; timestamp?: number }
   ): Promise<RecognizedFace[]> {
     try {
       const res = await fetch(`${BASE_URL}/recognize`, {
@@ -129,6 +130,8 @@ class BackendRecognitionService {
           image: dataURL,
           filter_ids: opts?.filterByPersonIds || null,
           group_id: opts?.groupId || null,
+          report_id: opts?.reportId || this.activeReportId,
+          timestamp: opts?.timestamp,
         })
       });
 
@@ -252,7 +255,7 @@ class BackendRecognitionService {
     const response = await fetch(`${BASE_URL}/process-video-frame`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageDataUrl, timestamp })
+      body: JSON.stringify({ image: imageDataUrl, timestamp, report_id: this.activeReportId })
     });
     
     if (!response.ok) {
@@ -315,6 +318,8 @@ class BackendRecognitionService {
             frameCount: data.frames
           }));
 
+          console.log(`Video processing complete: ${results.length} people recognized in ${framesProcessed} frames`);
+
           resolve({
             recognizedPeople: results,
             framesProcessed,
@@ -332,7 +337,20 @@ class BackendRecognitionService {
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
             // Call recognize endpoint
-            const faces = await this.recognizeFromDataURL(dataUrl);
+            const faces = await this.recognizeFromDataURL(dataUrl, {
+              groupId: groupId,
+              reportId: this.activeReportId || undefined,
+              timestamp: currentTime
+            });
+
+            // Also call process-video-frame to save face crops for the report
+            if (this.activeReportId) {
+              try {
+                await this.processVideoFrame(dataUrl, currentTime);
+              } catch (e) {
+                // Ignore errors in crop saving
+              }
+            }
             
             framesProcessed++;
             totalFacesDetected += faces.length;
@@ -429,6 +447,37 @@ class BackendRecognitionService {
     if (!response.ok) {
       throw new Error(`Group update failed: ${response.statusText}`);
     }
+  }
+
+  // Test report helpers
+  async startTestReport(videoName?: string): Promise<string> {
+    const res = await fetch(`${BASE_URL}/test-report/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_name: videoName || null })
+    });
+    if (!res.ok) throw new Error('Failed to start test report');
+    const json = await res.json();
+    this.activeReportId = json.report_id as string;
+    return this.activeReportId;
+  }
+
+  async finalizeTestReport(): Promise<any> {
+    if (!this.activeReportId) return null;
+    const res = await fetch(`${BASE_URL}/test-report/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ report_id: this.activeReportId })
+    });
+    if (!res.ok) throw new Error('Failed to finalize test report');
+    const json = await res.json();
+    return json;
+  }
+
+  getReportDownloadUrl(reportId?: string): string | null {
+    const id = reportId || this.activeReportId;
+    if (!id) return null;
+    return `${BASE_URL}/test-report/download/${id}`;
   }
 }
 

@@ -1,0 +1,96 @@
+{
+  "videoName": "32E79F3E-450C-479F-9A9E-72FBC33AE72A.MP4",
+  "peopleRecognized": [
+    "omri 26.10",
+    "omri shamai"
+  ],
+  "framesProcessed": 20,
+  "totalFacesDetected": 6,
+  "unknownFacesDetected": 0,
+  "details": [
+    {
+      "timestamp": 2.0,
+      "type": "recognized",
+      "person_id": "1761503005601",
+      "person_name": "omri 26.10",
+      "confidence": 0.5341189503669739,
+      "box": {
+        "x": 27.625385284423828,
+        "y": 314.68560791015625,
+        "width": 52.487918853759766,
+        "height": 61.039794921875
+      },
+      "image_path": "faces/known/ts2000_7237a23125ce48c19c88abf7542736d3.jpg"
+    },
+    {
+      "timestamp": 2.5,
+      "type": "recognized",
+      "person_id": "1761503005601",
+      "person_name": "omri 26.10",
+      "confidence": 0.4835265278816223,
+      "box": {
+        "x": 34.70600891113281,
+        "y": 305.9398498535156,
+        "width": 51.601402282714844,
+        "height": 63.51611328125
+      },
+      "image_path": "faces/known/ts2500_a779ee2ac7a54ae6a5946f05ee6c01d9.jpg"
+    },
+    {
+      "timestamp": 3.0,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.4724690020084381,
+      "box": {
+        "x": 46.53074645996094,
+        "y": 322.94805908203125,
+        "width": 60.192527770996094,
+        "height": 60.857452392578125
+      },
+      "image_path": "faces/known/ts3000_8b7242ba115140c2bfda176b5eaf1c88.jpg"
+    },
+    {
+      "timestamp": 3.5,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.44913533329963684,
+      "box": {
+        "x": 125.66268920898438,
+        "y": 311.4039611816406,
+        "width": 50.52076721191406,
+        "height": 65.30484008789062
+      },
+      "image_path": "faces/known/ts3500_270c7820667e443cbd8569c5067d0b28.jpg"
+    },
+    {
+      "timestamp": 5.0,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.5379500389099121,
+      "box": {
+        "x": 178.43258666992188,
+        "y": 311.6820983886719,
+        "width": 46.448211669921875,
+        "height": 57.455963134765625
+      },
+      "image_path": "faces/known/ts5000_d5beca26d7ba443b931950d60f812d0a.jpg"
+    },
+    {
+      "timestamp": 5.5,
+      "type": "recognized",
+      "person_id": "1760627816861",
+      "person_name": "omri shamai",
+      "confidence": 0.45491617918014526,
+      "box": {
+        "x": 39.247161865234375,
+        "y": 324.7992858886719,
+        "width": 78.78852844238281,
+        "height": 67.291259765625
+      },
+      "image_path": "faces/known/ts5500_7bbafa6adadc4f9788aeb49eecd57f3d.jpg"
+    }
+  ]
+}

@@ -22,6 +22,8 @@ export function VideoTestPage({ groups, people, onBack }: VideoTestPageProps) {
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<RecognitionResult[]>([]);
   const [stats, setStats] = useState({ framesProcessed: 0, facesDetected: 0 });
+  const [reportId, setReportId] = useState<string | null>(null);
+  const [reportDownloadUrl, setReportDownloadUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,8 +44,15 @@ export function VideoTestPage({ groups, people, onBack }: VideoTestPageProps) {
     setIsProcessing(true);
     setProgress(0);
     setResults([]);
+    setReportDownloadUrl(null);
 
     try {
+      // Start test report
+      const reportId = await backendRecognitionService.startTestReport(videoFile.name);
+      setReportId(reportId);
+
+      console.log(`Starting video recognition for group "${selectedGroup.name}" with ${selectedGroup.members.length} members`);
+
       const result = await backendRecognitionService.recognizeFromVideo(
         videoFile,
         selectedGroupId,
@@ -56,6 +65,10 @@ export function VideoTestPage({ groups, people, onBack }: VideoTestPageProps) {
         framesProcessed: result.framesProcessed,
         facesDetected: result.totalFacesDetected
       });
+
+      // Finalize test report
+      await backendRecognitionService.finalizeTestReport();
+      setReportDownloadUrl(backendRecognitionService.getReportDownloadUrl());
     } catch (error) {
       console.error('Video processing error:', error);
       alert('Failed to process video. Please try again.');
@@ -246,6 +259,22 @@ export function VideoTestPage({ groups, people, onBack }: VideoTestPageProps) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Download Test Report Button */}
+        {reportDownloadUrl && (
+          <div className="mt-6">
+            <a
+              href={reportDownloadUrl}
+              className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+              download
+            >
+              📁 Download Test Report (ZIP)
+            </a>
+            <p className="text-sm text-gray-600 mt-2">
+              Contains summary.json and cropped face images
+            </p>
           </div>
         )}
       </div>

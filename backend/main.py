@@ -8,9 +8,10 @@ import uuid
 from typing import List, Optional, Tuple
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from PIL import Image
 
@@ -18,17 +19,17 @@ from PIL import Image
 try:
     from insightface.app import FaceAnalysis  # site-packages
 except Exception:
-try:
-    import sys
-    LOCAL_INSIGHTFACE = "/Users/omrishamai/Desktop/insightface-master/python-package"
-    if os.path.isdir(LOCAL_INSIGHTFACE) and LOCAL_INSIGHTFACE not in sys.path:
-        sys.path.insert(0, LOCAL_INSIGHTFACE)
+    try:
+        import sys
+        LOCAL_INSIGHTFACE = "/Users/omrishamai/Desktop/insightface-master/python-package"
+        if os.path.isdir(LOCAL_INSIGHTFACE) and LOCAL_INSIGHTFACE not in sys.path:
+            sys.path.insert(0, LOCAL_INSIGHTFACE)
         from insightface.app import FaceAnalysis  # local fallback
-except Exception as e:
-    raise RuntimeError(
+    except Exception as e:
+        raise RuntimeError(
             f"Failed to import insightface (installed or local) from '{LOCAL_INSIGHTFACE}': {e}. "
             "Install with 'pip install insightface onnxruntime' or ensure the local python-package exists."
-    )
+        )
 
 
 DB_PATH = os.environ.get("FACE_DB_PATH", os.path.join(os.path.dirname(__file__), "faces.db"))
@@ -49,6 +50,89 @@ app.add_middleware(
 )
 
 face_app: Optional[FaceAnalysis] = None
+# -----------------------
+# Test report infrastructure
+# -----------------------
+TEST_REPORTS_ROOT = os.path.join(os.path.dirname(__file__), "test_reports")
+os.makedirs(TEST_REPORTS_ROOT, exist_ok=True)
+
+# In-memory tracking per report_id
+# report_state: {
+#   report_id: {
+#       "dir": str,
+#       "faces_known_dir": str,
+#       "faces_unknown_dir": str,
+#       "events": List[dict],
+#       "framesProcessed": int,
+#       "totalFacesDetected": int,
+#       "unknownFacesDetected": int,
+#       "peopleRecognized": set[str],
+#       "seen_ts": set[float],
+#       "video_name": Optional[str]
+#   }
+# }
+_report_state = {}
+
+def _ensure_report_dirs(report_id: str) -> dict:
+    state = _report_state.get(report_id)
+    if state:
+        return state
+    report_dir = os.path.join(TEST_REPORTS_ROOT, report_id)
+    faces_known_dir = os.path.join(report_dir, "faces", "known")
+    faces_unknown_dir = os.path.join(report_dir, "faces", "unknown")
+    os.makedirs(faces_known_dir, exist_ok=True)
+    os.makedirs(faces_unknown_dir, exist_ok=True)
+    state = {
+        "dir": report_dir,
+        "faces_known_dir": faces_known_dir,
+        "faces_unknown_dir": faces_unknown_dir,
+        "events": [],
+        "framesProcessed": 0,
+        "totalFacesDetected": 0,
+        "unknownFacesDetected": 0,
+        "peopleRecognized": set(),
+        "seen_ts": set(),
+        "video_name": None,
+    }
+    _report_state[report_id] = state
+    return state
+
+def _record_frame_seen(report: dict, ts: Optional[float]):
+    if ts is None:
+        report["framesProcessed"] += 1
+        return
+    # Only count unique timestamps once
+    if ts not in report["seen_ts"]:
+        report["seen_ts"].add(ts)
+        report["framesProcessed"] += 1
+
+def _save_face_crop(img_pil: Image.Image, bbox: Tuple[float, float, float, float], out_dir: str, prefix: str) -> str:
+    # bbox = (x1, y1, x2, y2)
+    x1, y1, x2, y2 = bbox
+    # Clamp to image bounds
+    w, h = img_pil.size
+    x1 = max(0, min(w, x1))
+    x2 = max(0, min(w, x2))
+    y1 = max(0, min(h, y1))
+    y2 = max(0, min(h, y2))
+    if x2 <= x1 or y2 <= y1:
+        # Fallback: save whole image if invalid crop
+        crop = img_pil
+    else:
+        crop = img_pil.crop((int(x1), int(y1), int(x2), int(y2)))
+    filename = f"{prefix}_{uuid.uuid4().hex}.jpg"
+    path = os.path.join(out_dir, filename)
+    try:
+        crop.save(path, "JPEG", quality=90)
+    except Exception:
+        # If save fails for any reason, ignore silently
+        pass
+    return path
+
+def _append_event(report: dict, event: dict):
+    # Convert any non-serializable items (like sets) later at finalize
+    report["events"].append(event)
+
 
 
 def get_conn() -> sqlite3.Connection:
@@ -146,6 +230,8 @@ class RecognizeRequest(BaseModel):
     image: str  # dataURL or base64
     filter_ids: Optional[List[str]] = None
     group_id: Optional[str] = None
+    report_id: Optional[str] = None
+    timestamp: Optional[float] = None
 
 
 class DetectRequest(BaseModel):
@@ -316,6 +402,24 @@ def person_name_map() -> dict:
     return {pid: name for pid, name in rows}
 
 
+# Simple in-memory cache for group members to reduce DB lookups per request
+_group_members_cache: dict = {}
+_GROUP_MEMBERS_TTL_SECONDS = 60.0
+
+def get_group_members_cached(group_id: str) -> List[str]:
+    now = time.time()
+    cached = _group_members_cache.get(group_id)
+    if cached and (now - cached[0]) < _GROUP_MEMBERS_TTL_SECONDS:
+        return cached[1]
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT person_id FROM group_members WHERE group_id = ?", (group_id,))
+    members = [r[0] for r in cur.fetchall()]
+    conn.close()
+    _group_members_cache[group_id] = (now, members)
+    return members
+
+
 # Person & Group management endpoints
 
 class PersonCreate(BaseModel):
@@ -449,14 +553,10 @@ def recognize(req: RecognizeRequest):
     if not faces:
         return {"faces": []}
 
-    # If group provided and no filter_ids, derive IDs from group membership
+    # If group provided and no filter_ids, derive IDs from group membership (cached)
     filter_ids = req.filter_ids
     if not filter_ids and req.group_id:
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT person_id FROM group_members WHERE group_id = ?", (req.group_id,))
-        filter_ids = [r[0] for r in cur.fetchall()]
-        conn.close()
+        filter_ids = get_group_members_cached(req.group_id)
 
     enrolled = load_embeddings(filter_ids)
     if not enrolled:
@@ -465,23 +565,32 @@ def recognize(req: RecognizeRequest):
     id_to_name = person_name_map()
     results = []
     start_time = time.time()
+    # Prepare vectorized matrix of enrolled embeddings for faster matching (accuracy preserved)
+    enrolled_ids = [pid for pid, _ in enrolled]
+    enrolled_mat = np.stack([l2_normalize(e.astype(np.float32)) for _, e in enrolled], axis=0)
+
+    # Optional reporting: record frame and recognized crops if report_id provided
+    report_id = req.report_id
+    ts = req.timestamp
+    state = _ensure_report_dirs(report_id) if report_id else None
+    if state:
+        _record_frame_seen(state, ts)
+
     for f in faces:
         emb = np.array(f.normed_embedding, dtype=np.float32)
         emb = l2_normalize(emb)
-        best_id = None
-        best_score = -1.0
-        for pid, e in enrolled:
-            s = cosine(emb, e)
-            if s > best_score:
-                best_score = s
-                best_id = pid
-        if best_id is not None and best_score >= THRESHOLD:
+        # Cosine similarity since both sides are L2-normalized
+        sims = enrolled_mat @ emb  # shape: (N,)
+        best_idx = int(np.argmax(sims))
+        best_score = float(sims[best_idx])
+        if best_score >= THRESHOLD:
+            best_id = enrolled_ids[best_idx]
             x1, y1, x2, y2 = map(float, f.bbox)
             results.append(
                 {
                     "person_id": best_id,
                     "person_name": id_to_name.get(best_id, best_id),
-                    "confidence": float(best_score),
+                    "confidence": best_score,
                     "box": {
                         "x": x1,
                         "y": y1,
@@ -490,6 +599,20 @@ def recognize(req: RecognizeRequest):
                     },
                 }
             )
+            # Save known face crop if report is active
+            if state:
+                state["totalFacesDetected"] += 1
+                state["peopleRecognized"].add(id_to_name.get(best_id, best_id))
+                path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_known_dir"], prefix=f"ts{int((ts or 0)*1000)}")
+                _append_event(state, {
+                    "timestamp": ts,
+                    "type": "recognized",
+                    "person_id": best_id,
+                    "person_name": id_to_name.get(best_id, best_id),
+                    "confidence": best_score,
+                    "box": {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1},
+                    "image_path": os.path.relpath(path, state["dir"]) if path else None,
+                })
         # stop after ~700ms to avoid blocking live camera
         if (time.time() - start_time) >= 0.7:
             break
@@ -503,6 +626,7 @@ class ValidateFaceRequest(BaseModel):
 class ProcessVideoFrameRequest(BaseModel):
     image: str  # base64 video frame
     timestamp: float  # timestamp in seconds
+    report_id: Optional[str] = None
 
 @app.post("/validate-face")
 def validate_face(req: ValidateFaceRequest):
@@ -585,9 +709,19 @@ def process_video_frame(req: ProcessVideoFrameRequest):
     faces = face_app.get(img)
     
     if not faces:
+        # Reporting: count empty frame if report active
+        state = _ensure_report_dirs(req.report_id) if req.report_id else None
+        if state:
+            _record_frame_seen(state, req.timestamp)
         return {"faces": [], "timestamp": req.timestamp}
     
     # Use same recognition logic as live camera
+    # Optional reporting capture if a report_id is present in a side-channel
+    # For now, we only update counters and save unknown crops if called by a test harness that knows the report_id.
+    state = _ensure_report_dirs(req.report_id) if req.report_id else None
+    if state:
+        _record_frame_seen(state, req.timestamp)
+        state["totalFacesDetected"] += len(faces)
     results = []
     for f in faces:
         x1, y1, x2, y2 = map(float, f.bbox)
@@ -598,6 +732,17 @@ def process_video_frame(req: ProcessVideoFrameRequest):
             "height": y2 - y1,
             "timestamp": req.timestamp
         })
+        if state:
+            # Save detection crop under unknown; recognition endpoint will later save known
+            path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_unknown_dir"], prefix=f"ts{int(req.timestamp*1000)}")
+            _append_event(state, {
+                "timestamp": req.timestamp,
+                "type": "detected",
+                "unknown": True,
+                "box": {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1},
+                "image_path": os.path.relpath(path, state["dir"]) if path else None,
+            })
+            state["unknownFacesDetected"] += 1
     
     return {"faces": results, "timestamp": req.timestamp}
 
@@ -776,10 +921,69 @@ def get_groups():
     return {"groups": result}
 
 
+class TestReportStartRequest(BaseModel):
+    video_name: Optional[str] = None
+
+
+@app.post("/test-report/start")
+def test_report_start(req: TestReportStartRequest):
+    report_id = uuid.uuid4().hex
+    state = _ensure_report_dirs(report_id)
+    state["video_name"] = req.video_name
+    return {"report_id": report_id, "dir": state["dir"]}
+
+
+class TestReportFinalizeRequest(BaseModel):
+    report_id: str
+
+
+@app.post("/test-report/finalize")
+def test_report_finalize(req: TestReportFinalizeRequest):
+    state = _report_state.get(req.report_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Report not found")
+    # Build summary.json
+    people_names = list(state["peopleRecognized"]) if isinstance(state["peopleRecognized"], set) else state["peopleRecognized"]
+    summary = {
+        "videoName": state.get("video_name"),
+        "peopleRecognized": people_names,
+        "framesProcessed": state["framesProcessed"],
+        "totalFacesDetected": state["totalFacesDetected"],
+        "unknownFacesDetected": state["unknownFacesDetected"],
+        "details": state["events"],
+    }
+    try:
+        with open(os.path.join(state["dir"], "summary.json"), "w") as f:
+            json.dump(summary, f, indent=2)
+    except Exception:
+        pass
+    return summary
+
+
+@app.get("/test-report/download/{report_id}")
+def test_report_download(report_id: str):
+    state = _report_state.get(report_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Report not found")
+    report_dir = state["dir"]
+    zip_path = os.path.join(TEST_REPORTS_ROOT, f"{report_id}.zip")
+    try:
+        import zipfile
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
+            for root, _, files in os.walk(report_dir):
+                for f in files:
+                    full = os.path.join(root, f)
+                    arc = os.path.relpath(full, report_dir)
+                    z.write(full, arcname=arc)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create zip: {e}")
+    return FileResponse(zip_path, media_type='application/zip', filename=f"{report_id}.zip")
+
+
 if __name__ == "__main__":
     import uvicorn
 
     init_db()
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 

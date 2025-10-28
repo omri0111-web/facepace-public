@@ -1,0 +1,320 @@
+{
+  "videoName": "6BC51218-3A4E-4D10-A32E-F46973814F28.MP4",
+  "peopleRecognized": [
+    "gaya Z",
+    "omri 26.10"
+  ],
+  "framesProcessed": 39,
+  "totalFacesDetected": 22,
+  "unknownFacesDetected": 0,
+  "details": [
+    {
+      "timestamp": 4.0,
+      "type": "recognized",
+      "person_id": "1761503005601",
+      "person_name": "omri 26.10",
+      "confidence": 0.47617632150650024,
+      "box": {
+        "x": 250.712158203125,
+        "y": 53.95600891113281,
+        "width": 38.857757568359375,
+        "height": 50.84551239013672
+      },
+      "image_path": "faces/known/ts4000_384d3eee2b0f424da1134864139aaf13.jpg"
+    },
+    {
+      "timestamp": 6.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.5207828283309937,
+      "box": {
+        "x": 164.86346435546875,
+        "y": 84.55821990966797,
+        "width": 40.660186767578125,
+        "height": 51.24390411376953
+      },
+      "image_path": "faces/known/ts6000_7c642d249c3f4ecb81a9884d3fdd9787.jpg"
+    },
+    {
+      "timestamp": 6.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4594945013523102,
+      "box": {
+        "x": 173.83255004882812,
+        "y": 80.72174835205078,
+        "width": 43.91943359375,
+        "height": 52.053245544433594
+      },
+      "image_path": "faces/known/ts6500_bb37aac68d0b4d309de71b6e400c8fd1.jpg"
+    },
+    {
+      "timestamp": 7.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4303014278411865,
+      "box": {
+        "x": 203.44039916992188,
+        "y": 78.34736633300781,
+        "width": 45.10545349121094,
+        "height": 54.26078796386719
+      },
+      "image_path": "faces/known/ts7000_634da70e1a5d45949a699b557d83b694.jpg"
+    },
+    {
+      "timestamp": 7.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.587630033493042,
+      "box": {
+        "x": 245.50875854492188,
+        "y": 76.12138366699219,
+        "width": 48.278411865234375,
+        "height": 56.38206481933594
+      },
+      "image_path": "faces/known/ts7500_6224f3e5cd7e4fc0b7078a6274c89a86.jpg"
+    },
+    {
+      "timestamp": 8.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.5011076927185059,
+      "box": {
+        "x": 308.3183288574219,
+        "y": 80.40975189208984,
+        "width": 49.350311279296875,
+        "height": 55.208473205566406
+      },
+      "image_path": "faces/known/ts8000_9fe68d8b77694c81b9350c7fa054a706.jpg"
+    },
+    {
+      "timestamp": 8.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.5085372924804688,
+      "box": {
+        "x": 399.564208984375,
+        "y": 63.20631790161133,
+        "width": 54.522369384765625,
+        "height": 58.90571975708008
+      },
+      "image_path": "faces/known/ts8500_c627fc7146964ae1a22e5ca5a1e2e8e9.jpg"
+    },
+    {
+      "timestamp": 9.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.5327006578445435,
+      "box": {
+        "x": 442.8231506347656,
+        "y": 52.00157928466797,
+        "width": 57.133270263671875,
+        "height": 64.22533416748047
+      },
+      "image_path": "faces/known/ts9000_a6e867ab99e44ea294f729926886b2c8.jpg"
+    },
+    {
+      "timestamp": 9.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4551771879196167,
+      "box": {
+        "x": 469.6177062988281,
+        "y": 63.59725570678711,
+        "width": 57.122894287109375,
+        "height": 60.92251968383789
+      },
+      "image_path": "faces/known/ts9500_2da07baab6d6403e97035641ac3691c3.jpg"
+    },
+    {
+      "timestamp": 10.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.42653748393058777,
+      "box": {
+        "x": 465.50537109375,
+        "y": 60.2871208190918,
+        "width": 58.313720703125,
+        "height": 60.866886138916016
+      },
+      "image_path": "faces/known/ts10000_e9dd73e21bc24b3cbdbfd4d4dd51aa39.jpg"
+    },
+    {
+      "timestamp": 10.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4886433482170105,
+      "box": {
+        "x": 455.77374267578125,
+        "y": 61.35294723510742,
+        "width": 62.604248046875,
+        "height": 58.96223831176758
+      },
+      "image_path": "faces/known/ts10500_3d051aac472a46e78fb28e1aaa84d019.jpg"
+    },
+    {
+      "timestamp": 11.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.44261816143989563,
+      "box": {
+        "x": 481.3803405761719,
+        "y": 73.51280212402344,
+        "width": 58.052825927734375,
+        "height": 53.241676330566406
+      },
+      "image_path": "faces/known/ts11000_68d617d6b53d49cc87770b997d9c7ca5.jpg"
+    },
+    {
+      "timestamp": 11.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4577522277832031,
+      "box": {
+        "x": 446.88482666015625,
+        "y": 63.83309555053711,
+        "width": 57.349029541015625,
+        "height": 56.76205062866211
+      },
+      "image_path": "faces/known/ts11500_a4b5f211a90b468e85514605b92594b1.jpg"
+    },
+    {
+      "timestamp": 12.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.5621680021286011,
+      "box": {
+        "x": 437.2550964355469,
+        "y": 29.677976608276367,
+        "width": 49.946990966796875,
+        "height": 68.32285499572754
+      },
+      "image_path": "faces/known/ts12000_bb32af0e3dce4da6a829037c86dd67a7.jpg"
+    },
+    {
+      "timestamp": 12.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.45068591833114624,
+      "box": {
+        "x": 453.2300720214844,
+        "y": 32.3737907409668,
+        "width": 48.060577392578125,
+        "height": 66.68952560424805
+      },
+      "image_path": "faces/known/ts12500_9ca8384f272f4a2a9e6faaa8586448fd.jpg"
+    },
+    {
+      "timestamp": 13.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4625590145587921,
+      "box": {
+        "x": 457.79833984375,
+        "y": 54.63893127441406,
+        "width": 46.096466064453125,
+        "height": 58.97492980957031
+      },
+      "image_path": "faces/known/ts13000_d256f0db783740fe841d324eeb140502.jpg"
+    },
+    {
+      "timestamp": 13.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4860725998878479,
+      "box": {
+        "x": 433.88201904296875,
+        "y": 34.54172134399414,
+        "width": 44.042449951171875,
+        "height": 64.05381393432617
+      },
+      "image_path": "faces/known/ts13500_6f4909b193f2412d86a323895ed1ace8.jpg"
+    },
+    {
+      "timestamp": 14.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4605889916419983,
+      "box": {
+        "x": 407.1579284667969,
+        "y": 40.0882682800293,
+        "width": 42.078369140625,
+        "height": 61.48820877075195
+      },
+      "image_path": "faces/known/ts14000_8fc90d3aa7854e6a9ab40651f9d67ef9.jpg"
+    },
+    {
+      "timestamp": 14.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.44725242257118225,
+      "box": {
+        "x": 373.73388671875,
+        "y": 67.05455017089844,
+        "width": 40.085845947265625,
+        "height": 56.0997314453125
+      },
+      "image_path": "faces/known/ts14500_2fba46a9ea884a8e83e890027a44a129.jpg"
+    },
+    {
+      "timestamp": 26.0,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4830007255077362,
+      "box": {
+        "x": 316.5971984863281,
+        "y": 89.91304779052734,
+        "width": 35.4578857421875,
+        "height": 47.809776306152344
+      },
+      "image_path": "faces/known/ts26000_cd992d6076214cdab0d2890542ae11de.jpg"
+    },
+    {
+      "timestamp": 26.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.45032134652137756,
+      "box": {
+        "x": 310.823974609375,
+        "y": 93.07186126708984,
+        "width": 35.8587646484375,
+        "height": 50.681678771972656
+      },
+      "image_path": "faces/known/ts26500_1c766f2ca3cf46db9fd592632e011bce.jpg"
+    },
+    {
+      "timestamp": 27.5,
+      "type": "recognized",
+      "person_id": "1760628677370",
+      "person_name": "gaya Z",
+      "confidence": 0.4457186460494995,
+      "box": {
+        "x": 274.7216491699219,
+        "y": 105.86058807373047,
+        "width": 39.59027099609375,
+        "height": 56.89012908935547
+      },
+      "image_path": "faces/known/ts27500_8694b0fe3aad407692b32095cf0f2da7.jpg"
+    }
+  ]
+}
