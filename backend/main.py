@@ -106,7 +106,7 @@ def _record_frame_seen(report: dict, ts: Optional[float]):
         report["seen_ts"].add(ts)
         report["framesProcessed"] += 1
 
-def _save_face_crop(img_pil: Image.Image, bbox: Tuple[float, float, float, float], out_dir: str, prefix: str) -> str:
+def _save_face_crop(img_pil: Image.Image, bbox: Tuple[float, float, float, float], out_dir: str, prefix: str, person_name: str = None) -> str:
     # bbox = (x1, y1, x2, y2)
     x1, y1, x2, y2 = bbox
     # Clamp to image bounds
@@ -120,7 +120,21 @@ def _save_face_crop(img_pil: Image.Image, bbox: Tuple[float, float, float, float
         crop = img_pil
     else:
         crop = img_pil.crop((int(x1), int(y1), int(x2), int(y2)))
-    filename = f"{prefix}_{uuid.uuid4().hex}.jpg"
+    
+    # Create descriptive filename with person name and timestamp
+    if person_name:
+        # Clean person name for filename (remove special characters)
+        clean_name = "".join(c for c in person_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        clean_name = clean_name.replace(' ', '_')
+        # Extract timestamp from prefix (format: ts1234)
+        timestamp = prefix.replace('ts', '') if prefix.startswith('ts') else '0'
+        # Convert to seconds with decimal
+        timestamp_sec = f"{int(timestamp) / 1000:.1f}"
+        filename = f"{clean_name}_{timestamp_sec}.jpg"
+    else:
+        # Fallback to original naming for unknown faces
+        filename = f"{prefix}_{uuid.uuid4().hex}.jpg"
+    
     path = os.path.join(out_dir, filename)
     try:
         crop.save(path, "JPEG", quality=90)
@@ -603,7 +617,8 @@ def recognize(req: RecognizeRequest):
             if state:
                 state["totalFacesDetected"] += 1
                 state["peopleRecognized"].add(id_to_name.get(best_id, best_id))
-                path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_known_dir"], prefix=f"ts{int((ts or 0)*1000)}")
+                person_name = id_to_name.get(best_id, best_id)
+                path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_known_dir"], prefix=f"ts{int((ts or 0)*1000)}", person_name=person_name)
                 _append_event(state, {
                     "timestamp": ts,
                     "type": "recognized",
@@ -734,7 +749,7 @@ def process_video_frame(req: ProcessVideoFrameRequest):
         })
         if state:
             # Save detection crop under unknown; recognition endpoint will later save known
-            path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_unknown_dir"], prefix=f"ts{int(req.timestamp*1000)}")
+            path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_unknown_dir"], prefix=f"ts{int(req.timestamp*1000)}", person_name=None)
             _append_event(state, {
                 "timestamp": req.timestamp,
                 "type": "detected",

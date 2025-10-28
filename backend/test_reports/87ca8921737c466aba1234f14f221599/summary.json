@@ -1,0 +1,85 @@
+{
+  "videoName": "7EE6A15E-11A3-4D15-9DBC-18FD039CF53C.mov",
+  "peopleRecognized": [
+    "omri 26.10"
+  ],
+  "framesProcessed": 17,
+  "totalFacesDetected": 6,
+  "unknownFacesDetected": 5,
+  "details": [
+    {
+      "timestamp": 0.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 610.7689819335938,
+        "y": 1006.3480224609375,
+        "width": 30.503173828125,
+        "height": 32.483642578125
+      },
+      "image_path": "faces/unknown/ts500_d90430cf987e4dc49be569559fd2c340.jpg"
+    },
+    {
+      "timestamp": 1.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 572.7894287109375,
+        "y": 1030.196044921875,
+        "width": 32.1514892578125,
+        "height": 34.1146240234375
+      },
+      "image_path": "faces/unknown/ts1000_9a5d5aa69eea4c749c5575c9eb36d033.jpg"
+    },
+    {
+      "timestamp": 4.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 487.34027099609375,
+        "y": 1114.2586669921875,
+        "width": 33.6988525390625,
+        "height": 36.6168212890625
+      },
+      "image_path": "faces/unknown/ts4000_ddcfa2768ae649a88196ec73e8163aa6.jpg"
+    },
+    {
+      "timestamp": 7.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 78.50445556640625,
+        "y": 1183.9786376953125,
+        "width": 53.803070068359375,
+        "height": 57.4384765625
+      },
+      "image_path": "faces/unknown/ts7000_94d50b0a2fbd4bfa9cdfe62f2365d4cc.jpg"
+    },
+    {
+      "timestamp": 7.5,
+      "type": "recognized",
+      "person_id": "1761503005601",
+      "person_name": "omri 26.10",
+      "confidence": 0.5006312131881714,
+      "box": {
+        "x": 21.146709442138672,
+        "y": 1163.626953125,
+        "width": 53.15152359008789,
+        "height": 64.2138671875
+      },
+      "image_path": "faces/known/omri_2610_7.5.jpg"
+    },
+    {
+      "timestamp": 7.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 21.146709442138672,
+        "y": 1163.626953125,
+        "width": 53.15152359008789,
+        "height": 64.2138671875
+      },
+      "image_path": "faces/unknown/ts7500_0b0dac9df557426e8f2c8d307cff6b46.jpg"
+    }
+  ]
+}
