@@ -65,7 +65,16 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
   const [editMode, setEditMode] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [editingPhotos, setEditingPhotos] = useState<Person | null>(null);
-  const [photoQualityScores, setPhotoQualityScores] = useState<{[key: string]: number}>({});
+  // Store full quality metrics for each photo
+  const [photoQualityMetrics, setPhotoQualityMetrics] = useState<{[key: string]: {
+    face_width_px: number;
+    sharpness: number;
+    brightness: number;
+    contrast: number;
+    roll_abs: number | null;
+    passed: boolean;
+  }}>({});
+  const [uploadNotes, setUploadNotes] = useState<string[]>([]);
   const [showPhotoCamera, setShowPhotoCamera] = useState(false);
   const [photoCameraStream, setPhotoCameraStream] = useState<MediaStream | null>(null);
   const photoCameraVideoRef = useRef<HTMLVideoElement>(null);
@@ -89,6 +98,88 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
   // Track if we're in the middle of an update to prevent scroll jumps
   const isUpdatingRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Load quality metrics for existing photos when opening photo management
+  useEffect(() => {
+    if (!editingPhotos) {
+      // Clear metrics when closing photo management
+      setPhotoQualityMetrics({});
+      setUploadNotes([]);
+      return;
+    }
+    
+    if (!editingPhotos.photoPaths || editingPhotos.photoPaths.length === 0) {
+      return;
+    }
+    
+    // Check which photos don't have metrics yet using functional update
+    setPhotoQualityMetrics(prev => {
+      const photosNeedingMetrics = editingPhotos.photoPaths!.filter(
+        path => !prev[path]
+      );
+      
+      if (photosNeedingMetrics.length === 0) return prev; // All metrics already loaded
+      
+      // Load metrics for photos that don't have them
+      // Use canvas to convert image to base64 (avoids CORS issues)
+      const loadMetrics = async () => {
+        for (const photoPath of photosNeedingMetrics) {
+          try {
+            const photoUrl = backendRecognitionService.getPersonPhotoUrl(editingPhotos!.id, photoPath);
+            
+            // Create an image element and load the URL
+            const img = new Image();
+            img.crossOrigin = 'anonymous'; // Try to allow CORS if backend supports it
+            
+            await new Promise((resolve, reject) => {
+              img.onload = resolve;
+              img.onerror = reject;
+              img.src = photoUrl;
+            });
+            
+            // Convert image to base64 using canvas (doesn't require CORS)
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) continue;
+            
+            ctx.drawImage(img, 0, 0);
+            const dataURL = canvas.toDataURL('image/jpeg', 0.9);
+            
+            // Get quality metrics
+            try {
+              const quality = await backendRecognitionService.scorePhotoQuality(dataURL);
+              setPhotoQualityMetrics(prevMetrics => {
+                // Check again to avoid overwriting if already set
+                if (prevMetrics[photoPath]) return prevMetrics;
+                return {
+                  ...prevMetrics,
+                  [photoPath]: {
+                    face_width_px: quality.metrics?.face_width_px || 0,
+                    sharpness: quality.metrics?.sharpness || 0,
+                    brightness: quality.metrics?.brightness || 0,
+                    contrast: quality.metrics?.contrast || 0,
+                    roll_abs: quality.metrics?.roll_abs || null,
+                    passed: quality.passed
+                  }
+                };
+              });
+            } catch (err) {
+              // Skip if quality check fails
+              console.warn('Failed to get quality metrics for photo:', photoPath, err);
+            }
+          } catch (err) {
+            // Skip if image load fails (CORS or other issues)
+            console.warn('Failed to load photo for quality check:', photoPath, err);
+          }
+        }
+      };
+      
+      loadMetrics();
+      return prev; // Return unchanged for now, metrics will be updated async
+    });
+  }, [editingPhotos?.id, editingPhotos?.photoPaths?.join(',')]);
 
   // Sync selectedPerson with people prop changes
   // Only update if the person was deleted, not on every change
@@ -679,32 +770,107 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                 </Button>
               </div>
 
-              {/* Photo Quality Summary */}
-              {editingPhotos.photoPaths && editingPhotos.photoPaths.length > 0 && (
-                <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="text-sm font-medium text-blue-900 mb-2">📊 Photo Quality Summary</div>
-                  <div className="text-xs text-blue-700">
-                    {Object.keys(photoQualityScores).length > 0 ? (
+              {/* Photo Quality Summary - Always show to prevent layout shift */}
+              <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200 min-h-[100px]">
+                <div className="text-sm font-medium text-blue-900 mb-3">📊 Photo Quality Summary</div>
+                {editingPhotos.photoPaths && editingPhotos.photoPaths.length > 0 ? (
+                  Object.keys(photoQualityMetrics).length > 0 ? (
                       <>
                         {(() => {
-                          const scores = Object.values(photoQualityScores) as number[];
-                          const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-                          const best = Math.max(...scores);
-                          const lowest = Math.min(...scores);
-                          return `Average Score: ${avg}/100 • Best: ${best}/100 • Lowest: ${lowest}/100`;
+                        const allMetrics = Object.values(photoQualityMetrics) as Array<{
+                          face_width_px: number;
+                          sharpness: number;
+                          brightness: number;
+                          contrast: number;
+                          roll_abs: number | null;
+                          passed: boolean;
+                        }>;
+                        const widths = allMetrics.map(m => m.face_width_px);
+                        const sharpness = allMetrics.map(m => m.sharpness);
+                        const brightness = allMetrics.map(m => m.brightness);
+                        const contrast = allMetrics.map(m => m.contrast);
+                        const passedCount = allMetrics.filter(m => m.passed).length;
+                        const totalPhotos = editingPhotos.photoPaths.length;
+                        
+                        // Calculate overall quality score (0-100)
+                        // Combine multiple factors
+                        const avgWidth = widths.reduce((a, b) => a + b, 0) / widths.length;
+                        const minWidth = Math.min(...widths);
+                        const avgSharpness = sharpness.reduce((a, b) => a + b, 0) / sharpness.length;
+                        const avgBrightness = brightness.reduce((a, b) => a + b, 0) / brightness.length;
+                        const avgContrast = contrast.reduce((a, b) => a + b, 0) / contrast.length;
+                        
+                        // Face size score (0-25): min width matters most
+                        const sizeScore = Math.min(25, (minWidth / 160) * 25); // 160px = 100% of size score
+                        
+                        // Sharpness score (0-25): threshold is 100, good is 200+
+                        const sharpnessScore = Math.min(25, (avgSharpness / 200) * 25);
+                        
+                        // Brightness score (0-15): ideal is 130 (middle of 60-200)
+                        const brightnessScore = avgBrightness < 60 || avgBrightness > 200 
+                          ? 0 
+                          : Math.min(15, 15 - Math.abs(avgBrightness - 130) / 130 * 15);
+                        
+                        // Contrast score (0-10): threshold is 30, good is 50+
+                        const contrastScore = Math.min(10, (avgContrast / 50) * 10);
+                        
+                        // Pass rate score (0-25): based on how many photos pass
+                        const passRateScore = (passedCount / totalPhotos) * 25;
+                        
+                        const overallScore = Math.round(sizeScore + sharpnessScore + brightnessScore + contrastScore + passRateScore);
+                        const scoreColor = overallScore >= 80 ? 'text-green-700' : overallScore >= 60 ? 'text-yellow-700' : 'text-red-700';
+                        const scoreBg = overallScore >= 80 ? 'bg-green-100' : overallScore >= 60 ? 'bg-yellow-100' : 'bg-red-100';
+                        
+                        return (
+                          <>
+                            {/* Overall Quality Score */}
+                            <div className={`mb-3 p-3 rounded-lg ${scoreBg} border-2 ${overallScore >= 80 ? 'border-green-300' : overallScore >= 60 ? 'border-yellow-300' : 'border-red-300'}`}>
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm font-semibold text-gray-700">Overall Quality Score</div>
+                                <div className={`text-2xl font-bold ${scoreColor}`}>{overallScore}/100</div>
+                              </div>
+                              <div className="text-xs text-gray-600 mt-1">
+                                {overallScore >= 80 ? '✅ Excellent - Ready for recognition' : 
+                                 overallScore >= 60 ? '⚠️ Good - Consider adding more photos' : 
+                                 '❌ Needs improvement - Add better quality photos'}
+                              </div>
+                            </div>
+                            
+                            {/* Detailed Metrics */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                              <div>
+                                <div className="text-blue-700 font-medium">Photos</div>
+                                <div className="text-blue-900">{totalPhotos} total • {passedCount} passing</div>
+                              </div>
+                              <div>
+                                <div className="text-blue-700 font-medium">Face Size</div>
+                                <div className="text-blue-900">Avg: {Math.round(avgWidth)}px • Min: {Math.round(minWidth)}px</div>
+                              </div>
+                              <div>
+                                <div className="text-blue-700 font-medium">Sharpness</div>
+                                <div className="text-blue-900">Avg: {Math.round(avgSharpness)} • Best: {Math.round(Math.max(...sharpness))}</div>
+                              </div>
+                              <div>
+                                <div className="text-blue-700 font-medium">Lighting</div>
+                                <div className="text-blue-900">Bright: {Math.round(avgBrightness)} • Contrast: {Math.round(avgContrast)}</div>
+                              </div>
+                            </div>
+                          </>
+                        );
                         })()}
                       </>
                     ) : (
-                      'Upload or capture photos to see quality scores'
+                    <div className="text-xs text-blue-600">Quality metrics will appear after photos are checked</div>
+                  )
+                ) : (
+                  <div className="text-xs text-blue-600">No photos yet. Upload or capture photos to see quality metrics.</div>
                     )}
                   </div>
-                </div>
-              )}
 
-              {/* Current Photos Gallery */}
+              {/* Current Photos Gallery - Reserve space to prevent jumps */}
               <div className="mb-6">
                 <h4 className="text-sm font-medium mb-3">Current Photos ({editingPhotos.photoPaths?.length || 0})</h4>
-                <div className="grid grid-cols-8 gap-2">
+                <div className="grid grid-cols-8 gap-2 min-h-[100px]">
                   {editingPhotos.photoPaths && editingPhotos.photoPaths.length > 0 ? (
                     editingPhotos.photoPaths.map((photoPath, index) => (
                       <div key={index} className="relative aspect-square">
@@ -713,9 +879,11 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                           alt={`Photo ${index + 1}`}
                           className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
                         />
-                        {photoQualityScores[photoPath] && (
-                          <div className="absolute bottom-1 left-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded font-medium">
-                            {photoQualityScores[photoPath]}
+                        {photoQualityMetrics[photoPath] && (
+                          <div className={`absolute bottom-1 left-1 text-white text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            photoQualityMetrics[photoPath].passed ? 'bg-green-600' : 'bg-red-600'
+                          }`}>
+                            {photoQualityMetrics[photoPath].passed ? '✓' : '✗'}
                           </div>
                         )}
                         <Button
@@ -727,11 +895,11 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                               const updatedPerson = { ...editingPhotos, photoPaths: updatedPhotoPaths };
                               setEditingPhotos(updatedPerson);
                               setPeople(people.map(p => p.id === editingPhotos.id ? updatedPerson : p));
-                              // Remove score from state
-                              setPhotoQualityScores(prev => {
-                                const newScores = { ...prev };
-                                delete newScores[photoPath];
-                                return newScores;
+                              // Remove metrics from state
+                              setPhotoQualityMetrics(prev => {
+                                const newMetrics = { ...prev };
+                                delete newMetrics[photoPath];
+                                return newMetrics;
                               });
                             } catch (error) {
                               logger.error('Failed to delete photo', error);
@@ -781,27 +949,35 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                               const imageDataUrl = event.target?.result as string;
                               
                               // Validate photo quality
-                              const validation = await backendRecognitionService.validateFace(imageDataUrl);
-                              
-                              const scoreMessage = `📊 Photo Quality Score: ${validation.score}/100\n\n` +
-                                `Quality: ${validation.quality.toUpperCase()}\n` +
-                                `${validation.message}\n\n` +
-                                `${validation.recommendation}`;
-                              
-                              if (validation.score < 40) {
-                                alert(scoreMessage + '\n\n❌ Photo rejected - score too low');
+                              const quality = await backendRecognitionService.scorePhotoQuality(imageDataUrl);
+                              if (!quality.passed) {
+                                // Record rejection note
+                                setUploadNotes(prev => [
+                                  `Rejected: ${[...(quality.reasons||[])].join('; ')}`,
+                                  ...prev
+                                ].slice(0,5));
                                 return;
                               }
-                              
-                              alert(scoreMessage + '\n\n✅ Photo accepted!');
+                              // Accepted note
+                              setUploadNotes(prev => [
+                                `Accepted (width ${Math.round(quality.metrics?.face_width_px||0)}px, sharp ${Math.round(quality.metrics?.sharpness||0)})`,
+                                ...prev
+                              ].slice(0,5));
                               
                               // Upload photo
                               const result = await backendRecognitionService.uploadPersonPhoto(editingPhotos.id, imageDataUrl);
                               
-                              // Store quality score
-                              setPhotoQualityScores(prev => ({
+                              // Store full quality metrics
+                              setPhotoQualityMetrics(prev => ({
                                 ...prev,
-                                [result.filename]: validation.score
+                                [result.filename]: {
+                                  face_width_px: quality.metrics?.face_width_px || 0,
+                                  sharpness: quality.metrics?.sharpness || 0,
+                                  brightness: quality.metrics?.brightness || 0,
+                                  contrast: quality.metrics?.contrast || 0,
+                                  roll_abs: quality.metrics?.roll_abs || null,
+                                  passed: quality.passed
+                                }
                               }));
                               
                               // Update local state
@@ -813,7 +989,7 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                             reader.readAsDataURL(file);
                           } catch (error) {
                             logger.error('Failed to upload photo', error);
-                            alert('Failed to upload photo. Please try again.');
+                            setUploadNotes(prev => ['Failed to upload photo. Please try again.', ...prev].slice(0,5));
                           }
                         }
                         
@@ -852,13 +1028,14 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                   <>
                     <h4 className="text-sm font-medium mb-3">📷 Take Photo</h4>
                     
-                    <div className="relative bg-black rounded-lg overflow-hidden mb-3">
+                    {/* Reserve fixed height for camera to prevent layout jump */}
+                    <div className="relative bg-black rounded-lg overflow-hidden mb-3 h-[300px]">
                       <video
                         ref={photoCameraVideoRef}
                         autoPlay
                         playsInline
                         muted
-                        className="w-full h-auto max-h-[40vh] object-cover"
+                        className="w-full h-full object-cover"
                       />
                     </div>
                     
@@ -866,7 +1043,20 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                       <Button
                         onClick={async () => {
                           const video = photoCameraVideoRef.current;
-                          if (!video) return;
+                          if (!video || !photoCameraStream) {
+                            // Start camera if not running yet
+                            try {
+                              const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+                              setPhotoCameraStream(stream);
+                              if (photoCameraVideoRef.current) {
+                                photoCameraVideoRef.current.srcObject = stream;
+                              }
+                            } catch (error) {
+                              logger.error('Failed to start camera', error);
+                              setUploadNotes(prev => ['Could not access camera', ...prev].slice(0,5));
+                            }
+                            return;
+                          }
                           
                           // Capture photo from video
                           const canvas = document.createElement('canvas');
@@ -880,27 +1070,33 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                           
                           try {
                             // Validate photo quality
-                            const validation = await backendRecognitionService.validateFace(imageDataUrl);
-                            
-                            const scoreMessage = `📊 Photo Quality Score: ${validation.score}/100\n\n` +
-                              `Quality: ${validation.quality.toUpperCase()}\n` +
-                              `${validation.message}\n\n` +
-                              `${validation.recommendation}`;
-                            
-                            if (validation.score < 40) {
-                              alert(scoreMessage + '\n\n❌ Photo rejected - score too low');
+                            const quality = await backendRecognitionService.scorePhotoQuality(imageDataUrl);
+                            if (!quality.passed) {
+                              setUploadNotes(prev => [
+                                `Rejected: ${[...(quality.reasons||[])].join('; ')}`,
+                                ...prev
+                              ].slice(0,5));
                               return;
                             }
-                            
-                            alert(scoreMessage + '\n\n✅ Photo accepted!');
+                            setUploadNotes(prev => [
+                              `Accepted (width ${Math.round(quality.metrics?.face_width_px||0)}px, sharp ${Math.round(quality.metrics?.sharpness||0)})`,
+                              ...prev
+                            ].slice(0,5));
                             
                             // Upload photo
                             const result = await backendRecognitionService.uploadPersonPhoto(editingPhotos.id, imageDataUrl);
                             
-                            // Store quality score
-                            setPhotoQualityScores(prev => ({
+                            // Store full quality metrics
+                            setPhotoQualityMetrics(prev => ({
                               ...prev,
-                              [result.filename]: validation.score
+                              [result.filename]: {
+                                face_width_px: quality.metrics?.face_width_px || 0,
+                                sharpness: quality.metrics?.sharpness || 0,
+                                brightness: quality.metrics?.brightness || 0,
+                                contrast: quality.metrics?.contrast || 0,
+                                roll_abs: quality.metrics?.roll_abs || null,
+                                passed: quality.passed
+                              }
                             }));
                             
                             // Update local state
@@ -917,9 +1113,10 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                             setShowPhotoCamera(false);
                           } catch (error) {
                             logger.error('Failed to capture photo', error);
-                            alert('Failed to capture photo. Please try again.');
+                            setUploadNotes(prev => ['Failed to capture photo. Please try again.', ...prev].slice(0,5));
                           }
                         }}
+                        type="button"
                         className="h-12 bg-blue-500 hover:bg-blue-600"
                       >
                         📸 Capture
@@ -940,6 +1137,17 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                       </Button>
                     </div>
                   </>
+                )}
+              </div>
+
+              {/* Recent quality notes - Reserve space to prevent layout jump */}
+              <div className="mt-3 min-h-[60px]">
+                {uploadNotes.length > 0 && (
+                  <div className="text-xs text-gray-800 bg-yellow-50 border border-yellow-200 p-2 rounded">
+                    {uploadNotes.map((n,i)=>(
+                      <div key={i}>• {n}</div>
+                    ))}
+                  </div>
                 )}
               </div>
 

@@ -97,8 +97,31 @@ class BackendRecognitionService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ person_id: personId, person_name: personName, image: dataURL })
     });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      try {
+        const err = await res.json();
+        const detail = err?.detail;
+        if (detail && typeof detail === 'object') {
+          const msg = [detail.message, ...(detail.reasons || [])].filter(Boolean).join('\n• ');
+          throw new Error(msg || 'Enrollment rejected due to photo quality');
+        }
+      } catch (_) {
+        // fallthrough
+      }
+      throw new Error('Enrollment failed (bad request)');
+    }
     return true;
+  }
+
+  async scorePhotoQuality(dataURL: string): Promise<{ passed: boolean; reasons: string[]; metrics: any }> {
+    const res = await fetch(`${BASE_URL}/photo/quality`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataURL })
+    });
+    if (!res.ok) throw new Error('Quality check failed');
+    const json = await res.json();
+    return { passed: !!json.passed, reasons: json.reasons || [], metrics: json.metrics || {} };
   }
 
   async recognizeFaces(videoOrImage: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement, filterByPersonIds?: string[]): Promise<RecognizedFace[]> {

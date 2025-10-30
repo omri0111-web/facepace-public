@@ -37,23 +37,31 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
   const [enrollmentProgress, setEnrollmentProgress] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [capturedImages, setCapturedImages] = useState<string[]>([]);
   const [currentAngle, setCurrentAngle] = useState<'center' | 'left' | 'right' | 'up' | 'complete'>('center');
   const [error, setError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   
   // Photo upload mode states
   const [captureMode, setCaptureMode] = useState<'camera' | 'upload'>('camera');
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
-  const [validationResults, setValidationResults] = useState<Array<{
-    score: number;
-    quality: string;
-    message: string;
-    face_count: number;
-    recommendation: string;
-  }>>([]);
-  const [isValidating, setIsValidating] = useState(false);
+  
+  // Photo with quality check interface
+  interface PhotoWithQuality {
+    dataURL: string;
+    qualityCheck: {
+      passed: boolean;
+      reasons: string[];
+      metrics: {
+        face_width_px: number;
+        sharpness: number;
+        brightness: number;
+        contrast: number;
+        roll_abs: number | null;
+      };
+    } | null; // null = not checked yet
+    checking: boolean; // true = currently checking quality
+  }
+  
+  const [photos, setPhotos] = useState<PhotoWithQuality[]>([]);
   
   const angles = [
     { id: 'center', name: 'Center', instruction: 'Look straight at the camera', emoji: '👤' },
@@ -132,6 +140,44 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
     setStep('face-scan');
   };
 
+  // Check quality for a photo immediately after capture/upload
+  const checkPhotoQuality = async (dataURL: string, index: number) => {
+    // Mark as checking
+    setPhotos(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], checking: true };
+      return updated;
+    });
+
+    try {
+      const qualityResult = await backendRecognitionService.scorePhotoQuality(dataURL);
+      setPhotos(prev => {
+        const updated = [...prev];
+        updated[index] = {
+          ...updated[index],
+          qualityCheck: qualityResult,
+          checking: false
+        };
+        return updated;
+      });
+    } catch (err) {
+      console.error('Quality check failed:', err);
+      setPhotos(prev => {
+        const updated = [...prev];
+        updated[index] = {
+          ...updated[index],
+          qualityCheck: {
+            passed: false,
+            reasons: ['Failed to check quality'],
+            metrics: {}
+          },
+          checking: false
+        };
+        return updated;
+      });
+    }
+  };
+
   // Photo upload functions
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []) as File[];
@@ -148,14 +194,10 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
       return;
     }
 
-    setUploadedFiles(validFiles);
-    setIsValidating(true);
     setError(null);
 
-    // Convert files to data URLs and validate
-    const dataUrls: string[] = [];
-    const results: any[] = [];
-
+    // Convert files to data URLs and add to photos array
+    const newPhotos: PhotoWithQuality[] = [];
     for (const file of validFiles) {
       const dataUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
@@ -163,51 +205,27 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
         reader.readAsDataURL(file as Blob);
       });
 
-      dataUrls.push(dataUrl);
-
-      try {
-        const validation = await backendRecognitionService.validateFace(dataUrl);
-        results.push(validation);
-      } catch (err) {
-        console.error('Validation error:', err);
-        results.push({
-          score: 0,
-          quality: 'poor',
-          message: 'Failed to validate image',
-          face_count: 0,
-          recommendation: 'Please try a different image'
-        });
-      }
+      newPhotos.push({
+        dataURL: dataUrl,
+        qualityCheck: null,
+        checking: false
+      });
     }
 
-    setUploadedImages(dataUrls);
-    setValidationResults(results);
-    setIsValidating(false);
+    const startIndex = photos.length;
+    setPhotos(prev => [...prev, ...newPhotos]);
 
-    // Check if we have enough good quality photos
-    const goodPhotos = results.filter(r => r.score >= 40).length;
-    const averageScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
-
-    if (goodPhotos < 3) {
-      setError(`Need at least 3 good quality photos. You have ${goodPhotos} good photos. Please upload more.`);
-    } else if (averageScore < 60) {
-      setError(`Average photo quality is too low (${Math.round(averageScore)}/100). Please upload better quality photos.`);
-    } else {
-      setError(null);
+    // Check quality for each new photo
+    for (let i = 0; i < newPhotos.length; i++) {
+      await checkPhotoQuality(newPhotos[i].dataURL, startIndex + i);
     }
   };
 
-  const removeUploadedImage = (index: number) => {
-    const newFiles = uploadedFiles.filter((_, i) => i !== index);
-    const newImages = uploadedImages.filter((_, i) => i !== index);
-    const newResults = validationResults.filter((_, i) => i !== index);
-    
-    setUploadedFiles(newFiles);
-    setUploadedImages(newImages);
-    setValidationResults(newResults);
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
-  const captureCurrentAngle = () => {
+  const captureCurrentAngle = async () => {
     if (!videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
@@ -222,45 +240,57 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
 
     const imageData = canvas.toDataURL('image/jpeg', 0.95);
     
-    setCapturedImages(prev => [...prev, imageData]);
+    // Add photo and check quality immediately
+    const newIndex = photos.length;
+    setPhotos(prev => [...prev, {
+      dataURL: imageData,
+      qualityCheck: null,
+      checking: false
+    }]);
+    
+    // Check quality
+    await checkPhotoQuality(imageData, newIndex);
     
     // Move to next angle
     const currentIndex = angles.findIndex(a => a.id === currentAngle);
     if (currentIndex < angles.length - 1) {
       setCurrentAngle(angles[currentIndex + 1].id as any);
-    } else {
-      // All angles captured, proceed to enrollment
-      const allImages = [...capturedImages, imageData];
-      setCapturedImages(allImages);
-      enrollAllImages(allImages);
     }
   };
 
   const [enrolledPersonId, setEnrolledPersonId] = useState<string | null>(null);
   const [enrolledPhotoPaths, setEnrolledPhotoPaths] = useState<string[]>([]);
 
-  const enrollAllImages = async (images: string[]) => {
+  const startEnrollment = async () => {
+    // Get only passing photos
+    const passingPhotos = photos.filter(p => p.qualityCheck?.passed === true);
+    
+    if (passingPhotos.length < 3) {
+      setError(`Need at least 3 accepted photos. You have ${passingPhotos.length} accepted photos. Please add better photos (sharper, larger face, better light).`);
+      return;
+    }
+
     setStep('capturing');
     setIsScanning(true);
     setEnrollmentProgress(0);
     setError(null);
 
     try {
-      console.log(`📸 Processing ${images.length} images for enrollment...`);
+      console.log(`📸 Processing ${passingPhotos.length} accepted photos for enrollment...`);
       
       // Convert base64 images to Image elements
       const imgElements: HTMLImageElement[] = [];
       
-      for (let i = 0; i < images.length; i++) {
+      for (let i = 0; i < passingPhotos.length; i++) {
         const img = new Image();
-        img.src = images[i];
+        img.src = passingPhotos[i].dataURL;
         await new Promise((resolve) => {
           img.onload = resolve;
         });
         imgElements.push(img);
         
         // Update progress
-        setEnrollmentProgress((i + 1) / images.length * 50);
+        setEnrollmentProgress((i + 1) / passingPhotos.length * 50);
       }
 
       // Generate ID that will be used for the person - IMPORTANT: Store this!
@@ -272,12 +302,12 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
       // Ensure person exists in backend DB
       await backendRecognitionService.createPerson(personId, name);
 
-      // Upload photos to backend storage
-      console.log(`📤 Uploading ${images.length} photos to backend storage...`);
+      // Upload only accepted photos to backend storage
+      console.log(`📤 Uploading ${passingPhotos.length} accepted photos to backend storage...`);
       const uploadedPhotoPaths: string[] = [];
-      for (const imageDataUrl of images) {
+      for (const photo of passingPhotos) {
         try {
-          const result = await backendRecognitionService.uploadPersonPhoto(personId, imageDataUrl);
+          const result = await backendRecognitionService.uploadPersonPhoto(personId, photo.dataURL);
           uploadedPhotoPaths.push(result.filename);
         } catch (error) {
           console.error('Failed to upload photo:', error);
@@ -286,20 +316,20 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
       console.log(`✅ Uploaded ${uploadedPhotoPaths.length} photos`);
       setEnrolledPhotoPaths(uploadedPhotoPaths);
 
-      // Enroll all images to build multiple embeddings for the same person_id
+      // Enroll accepted images to build multiple embeddings for the same person_id
       let numSuccessful = 0;
-      for (let i = 0; i < imgElements.length; i++) {
+      for (let i = 0; i < passingPhotos.length; i++) {
         const ok = await backendRecognitionService.enrollFace(
           personId,
           name,
           imgElements[i]
         );
         if (ok) numSuccessful++;
-        setEnrollmentProgress(50 + ((i + 1) / imgElements.length) * 50);
+        setEnrollmentProgress(50 + (numSuccessful / passingPhotos.length) * 50);
       }
 
       if (numSuccessful === 0) {
-        throw new Error('Could not detect clear faces in the photos. Please try again with better lighting.');
+        throw new Error('Could not enroll photos. Please try again.');
       }
 
       setEnrollmentProgress(100);
@@ -319,53 +349,22 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
       setError(err.message || 'Failed to enroll face. Please try again.');
       setIsScanning(false);
       setEnrollmentProgress(0);
-      setCapturedImages([]);
-      setCurrentAngle('center');
       setStep('face-scan');
     }
   };
 
-  const startEnrollment = async () => {
-    if (captureMode === 'camera') {
-      // Use captured images from camera
-      if (capturedImages.length === 0) {
-        setError('Please capture photos first');
-        return;
-      }
-      await enrollAllImages(capturedImages);
-    } else {
-      // Use uploaded images
-      if (uploadedImages.length === 0) {
-        setError('Please upload photos first');
-        return;
-      }
-      
-      // Check validation results
-      const goodPhotos = validationResults.filter(r => r.score >= 40).length;
-      const averageScore = validationResults.reduce((sum, r) => sum + r.score, 0) / validationResults.length;
-      
-      if (goodPhotos < 3) {
-        setError(`Need at least 3 good quality photos. You have ${goodPhotos} good photos. Please upload more.`);
-        return;
-      }
-      
-      if (averageScore < 60) {
-        setError(`Average photo quality is too low (${Math.round(averageScore)}/100). Please upload better quality photos.`);
-        return;
-      }
-      
-      await enrollAllImages(uploadedImages);
-    }
-  };
-
   const retakePhoto = () => {
-    setCapturedImages([]);
+    setPhotos([]);
     setCurrentAngle('center');
     setError(null);
     setStep('face-scan');
     setEnrollmentProgress(0);
     startCamera();
   };
+  
+  // Count passing photos
+  const passingCount = photos.filter(p => p.qualityCheck?.passed === true).length;
+  const canEnroll = passingCount >= 3;
 
   const handleComplete = () => {
     if (!enrolledPersonId) {
@@ -383,7 +382,7 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
       parentPhone: parentPhone || '(555) 000-0000',
       allergies: allergies ? allergies.split(',').map(a => a.trim()) : [],
       faceData: `face_scan_${enrolledPersonId}`,
-      avatar: capturedImages[0] || undefined, // Use first photo as avatar
+      avatar: photos.filter(p => p.qualityCheck?.passed)[0]?.dataURL || undefined, // Use first accepted photo as avatar
       photoPaths: enrolledPhotoPaths, // Include uploaded photo paths
     };
 
@@ -404,7 +403,7 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
     setAllergies('');
     setEnrollmentProgress(0);
     setIsScanning(false);
-    setCapturedImages([]);
+    setPhotos([]);
     setCurrentAngle('center');
     setEnrolledPersonId(null); // Reset enrollment ID
     setError(null);
@@ -571,7 +570,7 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                     <div
                       key={angle.id}
                       className={`w-3 h-3 rounded-full transition-all ${
-                        capturedImages.length > index
+                        photos.length > index
                           ? 'bg-green-500'
                           : currentAngle === angle.id
                           ? 'bg-blue-500 animate-pulse'
@@ -580,6 +579,38 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                     />
                   ))}
                 </div>
+                
+                {/* Photo gallery with quality badges */}
+                {photos.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2 mb-4">
+                    {photos.map((photo, index) => (
+                      <div key={index} className="relative">
+                        <img
+                          src={photo.dataURL}
+                          alt={`Photo ${index + 1}`}
+                          className={`w-full h-20 object-cover rounded-lg border-2 ${
+                            photo.qualityCheck?.passed
+                              ? 'border-green-500'
+                              : photo.qualityCheck
+                              ? 'border-red-500'
+                              : 'border-gray-300'
+                          }`}
+                        />
+                        <div className="absolute top-0 right-0 text-xs px-1 rounded-bl">
+                          {photo.checking ? (
+                            <span className="bg-gray-500 text-white">...</span>
+                          ) : photo.qualityCheck?.passed ? (
+                            <span className="bg-green-500 text-white">✓</span>
+                          ) : photo.qualityCheck ? (
+                            <span className="bg-red-500 text-white">✗</span>
+                          ) : (
+                            <span className="bg-blue-500 text-white">{index + 1}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="relative">
                   <div className="w-full h-64 bg-black rounded-lg overflow-hidden">
@@ -616,7 +647,7 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                           {angles.find(a => a.id === currentAngle)?.instruction}
                         </div>
                         <div className="text-xs text-white/70 mt-1">
-                          Photo {capturedImages.length + 1} of {angles.length}
+                          Photo {photos.length + 1} of {angles.length}
                         </div>
                       </div>
                     </div>
@@ -664,73 +695,61 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                   </p>
                 </div>
 
-                {/* Validation Results */}
-                {uploadedImages.length > 0 && (
+                {/* Photo gallery with quality badges */}
+                {photos.length > 0 && (
                   <div className="space-y-3">
-                    <h4 className="font-medium text-sm">Photo Quality Analysis:</h4>
+                    <h4 className="font-medium text-sm">Photo Quality Status:</h4>
                     <div className="grid grid-cols-1 gap-3">
-                      {uploadedImages.map((image, index) => {
-                        const result = validationResults[index];
-                        const qualityColor = result?.score >= 70 ? 'green' : result?.score >= 40 ? 'yellow' : 'red';
-                        const qualityColorClass = result?.score >= 70 ? 'green' : result?.score >= 40 ? 'yellow' : 'red';
-                        return (
-                          <div key={index} className="flex items-center space-x-3 p-3 border rounded-lg">
-                            <img
-                              src={image}
-                              alt={`Upload ${index + 1}`}
-                              className="w-16 h-16 object-cover rounded"
-                            />
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium">Photo {index + 1}</span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => removeUploadedImage(index)}
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  Remove
-                                </Button>
-                              </div>
-                              <div className="flex items-center space-x-2 mt-1">
-                                <div className={`w-2 h-2 rounded-full ${
-                                  qualityColorClass === 'green' ? 'bg-green-500' : 
-                                  qualityColorClass === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'
-                                }`} />
-                                <span className={`text-xs ${
-                                  qualityColorClass === 'green' ? 'text-green-600' : 
-                                  qualityColorClass === 'yellow' ? 'text-yellow-600' : 'text-red-600'
-                                }`}>
-                                  {result?.message || 'Validating...'}
-                                </span>
-                              </div>
-                              {result && (
-                                <div className="flex items-center space-x-2 mt-1">
-                                  <div className="flex-1 bg-gray-200 rounded-full h-2">
-                                    <div
-                                      className={`h-2 rounded-full ${
-                                        qualityColorClass === 'green' ? 'bg-green-500' : 
-                                        qualityColorClass === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'
-                                      }`}
-                                      style={{ width: `${result.score}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-xs text-gray-600">{result.score}/100</span>
-                                </div>
-                              )}
+                      {photos.map((photo, index) => (
+                        <div key={index} className="flex items-start space-x-3 p-3 border rounded-lg">
+                          <img
+                            src={photo.dataURL}
+                            alt={`Photo ${index + 1}`}
+                            className="w-16 h-16 object-cover rounded"
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">Photo {index + 1}</span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => removePhoto(index)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                Remove
+                              </Button>
                             </div>
+                            {photo.checking ? (
+                              <div className="text-xs text-gray-600 mt-1">Checking quality...</div>
+                            ) : photo.qualityCheck ? (
+                              <div className="mt-1">
+                                {photo.qualityCheck.passed ? (
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-green-600 text-xs font-medium">✅ Good</span>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-red-600 text-xs font-medium">❌ Needs improvement</span>
+                                    </div>
+                                    <ul className="text-xs text-red-600 mt-1 list-disc list-inside">
+                                      {photo.qualityCheck.reasons.map((reason, i) => (
+                                        <li key={i}>{reason}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500 mt-1">Pending check...</div>
+                            )}
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                )}
-
-                {/* Validation Status */}
-                {isValidating && (
-                  <div className="text-center py-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                    <p className="text-sm text-gray-600">Analyzing photo quality...</p>
+                    <div className="text-sm text-gray-600">
+                      Accepted: {passingCount} / {photos.length} (Need at least 3)
+                    </div>
                   </div>
                 )}
               </div>
@@ -748,20 +767,30 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                 Cancel
               </Button>
               {captureMode === 'camera' ? (
-                <Button 
-                  onClick={captureCurrentAngle}
-                  disabled={!cameraReady}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  📸 Capture ({capturedImages.length + 1}/{angles.length})
-                </Button>
+                photos.length >= angles.length ? (
+                  <Button 
+                    onClick={startEnrollment}
+                    disabled={!canEnroll}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  >
+                    🚀 Start Enrollment ({passingCount} accepted)
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={captureCurrentAngle}
+                    disabled={!cameraReady}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                  >
+                    📸 Capture ({photos.length + 1}/{angles.length})
+                  </Button>
+                )
               ) : (
                 <Button 
                   onClick={startEnrollment}
-                  disabled={uploadedImages.length === 0 || isValidating}
+                  disabled={!canEnroll}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                 >
-                  🚀 Start Enrollment
+                  🚀 Start Enrollment ({passingCount} accepted)
                 </Button>
               )}
             </div>
@@ -770,14 +799,14 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
 
         {step === 'capturing' && (
           <div className="space-y-4">
-            {/* Show captured images grid */}
-            {capturedImages.length > 0 && (
+            {/* Show accepted images grid */}
+            {photos.filter(p => p.qualityCheck?.passed).length > 0 && (
               <div className="grid grid-cols-4 gap-2">
-                {capturedImages.map((img, index) => (
+                {photos.filter(p => p.qualityCheck?.passed).map((photo, index) => (
                   <div key={index} className="relative">
-                    <img src={img} alt={`Capture ${index + 1}`} className="w-full h-20 object-cover rounded-lg border-2 border-green-500" />
+                    <img src={photo.dataURL} alt={`Accepted ${index + 1}`} className="w-full h-20 object-cover rounded-lg border-2 border-green-500" />
                     <div className="absolute top-0 right-0 bg-green-500 text-white text-xs px-1 rounded-bl">
-                      {index + 1}
+                      ✓
                     </div>
                   </div>
                 ))}
@@ -788,7 +817,7 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
               <div className="w-full h-48 bg-gradient-to-br from-blue-900 to-purple-900 rounded-lg flex items-center justify-center">
                 <div className="text-white text-center">
                   <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-3"></div>
-                  <div className="text-sm font-medium mb-1">🧠 Processing {capturedImages.length} Images...</div>
+                  <div className="text-sm font-medium mb-1">🧠 Processing {photos.filter(p => p.qualityCheck?.passed).length} Images...</div>
                   <div className="text-xs text-white/80">Extracting high-quality facial features</div>
                 </div>
               </div>
@@ -811,24 +840,24 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
         )}
 
         {step === 'complete' && (
-          <div className="space-y-4 text-center">
+            <div className="space-y-4 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
               <span className="text-2xl">✅</span>
             </div>
             
             <div>
-              <h3 className="font-medium mb-2">HIGH-QUALITY Face Recognition Enrolled!</h3>
+              <h3 className="font-medium mb-2">Enrollment Complete</h3>
               <p className="text-sm text-gray-600 mb-4">
-                {name} has been successfully enrolled with {capturedImages.length} photos for maximum accuracy.
+                {name} enrolled with {passingCount} accepted photos.
               </p>
             </div>
 
-            {/* Show all captured photos */}
-            {capturedImages.length > 0 && (
+            {/* Show accepted photos */}
+            {photos.filter(p => p.qualityCheck?.passed).length > 0 && (
               <div className="flex justify-center space-x-2">
-                {capturedImages.map((img, index) => (
+                {photos.filter(p => p.qualityCheck?.passed).map((photo, index) => (
                   <div key={index} className="w-16 h-16 rounded-lg overflow-hidden border-2 border-green-300">
-                    <img src={img} alt={`${name} ${index + 1}`} className="w-full h-full object-cover" />
+                    <img src={photo.dataURL} alt={`${name} ${index + 1}`} className="w-full h-full object-cover" />
                   </div>
                 ))}
               </div>
@@ -836,13 +865,25 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
 
             <Card className="p-4 bg-green-50">
               <div className="text-sm">
-                <div className="font-medium text-green-800">✨ Enrollment Summary</div>
+                <div className="font-medium text-green-800">📊 Enrollment Summary</div>
                 <div className="text-green-700 mt-2 text-left space-y-1">
                   <div>✓ Name: {name}</div>
-                  <div>✓ Photos captured: {capturedImages.length} angles</div>
-                  <div>✓ AI model: SSD MobileNetV1 (High Quality)</div>
-                  <div>✓ Face embeddings: 128D vectors</div>
-                  <div>✓ Status: Ready for instant recognition</div>
+                  <div>✓ Accepted photos: {passingCount}</div>
+                  {photos.filter(p => p.qualityCheck?.passed).length > 0 && (
+                    <div className="text-xs text-gray-700">
+                      {(() => {
+                        const metrics = photos
+                          .filter(p => p.qualityCheck?.passed)
+                          .map(p => p.qualityCheck!.metrics)
+                          .filter(Boolean);
+                        const widths = metrics.map(m => m?.face_width_px || 0);
+                        const sharp = metrics.map(m => m?.sharpness || 0);
+                        const minW = widths.length > 0 ? Math.round(Math.min(...widths)) : 0;
+                        const avgSharp = sharp.length > 0 ? Math.round(sharp.reduce((a, b) => a + b, 0) / sharp.length) : 0;
+                        return `Min face width: ${minW}px • Avg sharpness: ${avgSharp}`;
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>

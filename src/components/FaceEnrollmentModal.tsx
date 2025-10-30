@@ -19,6 +19,7 @@ export function FaceEnrollmentModal({
 }: FaceEnrollmentModalProps) {
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [photos, setPhotos] = useState<Array<{ id: string; dataUrl: string; passed: boolean; reasons: string[]; metrics: any }>>([]);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,33 +93,29 @@ export function FaceEnrollmentModal({
   };
 
   const enrollFace = async () => {
-    if (!selectedPerson || !capturedImage) return;
+    if (!selectedPerson) return;
 
     setIsProcessing(true);
     setError(null);
 
     try {
-      // Create image element from captured photo
-      const img = new Image();
-      img.src = capturedImage;
-
-      await new Promise((resolve) => {
-        img.onload = resolve;
-      });
-
       // Ensure person exists, enroll via backend service, and add to group
       await backendRecognitionService.createPerson(selectedPerson.id, selectedPerson.name);
-      const enrolled = await backendRecognitionService.enrollFace(
-        selectedPerson.id,
-        selectedPerson.name,
-        img
-      );
+      // Enroll all passing photos
+      let anyEnrolled = false;
+      for (const p of photos.filter(p => p.passed)) {
+        const img = new Image();
+        img.src = p.dataUrl;
+        await new Promise((resolve) => { img.onload = resolve; });
+        const ok = await backendRecognitionService.enrollFace(selectedPerson.id, selectedPerson.name, img);
+        if (ok) anyEnrolled = true;
+      }
 
       if (selectedGroupId) {
         await backendRecognitionService.addGroupMember(selectedGroupId, selectedPerson.id);
       }
 
-      if (enrolled) {
+      if (anyEnrolled) {
         setSuccess(true);
         onEnrollmentComplete(selectedPerson.id);
         
@@ -136,7 +133,7 @@ export function FaceEnrollmentModal({
           handleClose();
         }, 2000);
       } else {
-        setError('No face detected in the photo. Please try again with a clear frontal face photo.');
+        setError('Enrollment failed: need at least 3 accepted photos that pass quality checks.');
       }
     } catch (err) {
       console.error('Enrollment failed:', err);
@@ -267,6 +264,47 @@ export function FaceEnrollmentModal({
               <div className="relative bg-black rounded-xl overflow-hidden">
                 <img src={capturedImage} alt="Captured" className="w-full" />
               </div>
+              {/* Quality check and add to gallery */}
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const { passed, reasons, metrics } = await backendRecognitionService.scorePhotoQuality(capturedImage);
+                      setPhotos(prev => [{ id: `${Date.now()}`, dataUrl: capturedImage, passed, reasons, metrics }, ...prev]);
+                      setCapturedImage(null);
+                      setIsCapturing(true);
+                    } catch (e) {
+                      setError('Failed to score photo quality. Please try again.');
+                    }
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg"
+                  disabled={isProcessing}
+                >
+                  Add Photo (score & continue)
+                </button>
+                <button onClick={retakePhoto} className="px-4 py-2 bg-gray-100 rounded-lg">Retake</button>
+              </div>
+
+              {/* Gallery with quality badges */}
+              {photos.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Photos ({photos.filter(p=>p.passed).length} accepted / {Math.max(3-photos.filter(p=>p.passed).length,0)} more needed)</div>
+                  {photos.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-2 border rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <img src={p.dataUrl} className="w-12 h-12 object-cover rounded" />
+                        <div>
+                          <div className={`text-xs ${p.passed ? 'text-green-700' : 'text-red-700'}`}>{p.passed ? 'Accepted' : 'Needs improvement'}</div>
+                          {!p.passed && (
+                            <div className="text-xs text-gray-600">{p.reasons.join('; ')}</div>
+                          )}
+                        </div>
+                      </div>
+                      <button onClick={() => setPhotos(prev => prev.filter(x => x.id !== p.id))} className="text-xs text-gray-600 hover:text-red-700">Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
               
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3">
@@ -285,15 +323,8 @@ export function FaceEnrollmentModal({
 
               <div className="flex space-x-3">
                 <button
-                  onClick={retakePhoto}
-                  disabled={isProcessing || success}
-                  className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Retake
-                </button>
-                <button
                   onClick={enrollFace}
-                  disabled={isProcessing || success}
+                  disabled={isProcessing || success || photos.filter(p=>p.passed).length < 3}
                   className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                 >
                   {isProcessing ? (

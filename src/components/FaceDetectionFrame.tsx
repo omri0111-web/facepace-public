@@ -1,3 +1,5 @@
+import React from 'react';
+
 interface FaceDetectionFrameProps {
   // Position (percentage-based for responsiveness)
   top: string;

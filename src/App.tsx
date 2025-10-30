@@ -17,11 +17,10 @@ export interface AttendanceRecordType {
   detectedCount: number;
   totalCapacity: number;
   groupName: string;
+  autoDetectedIds?: string[];
   guideName?: string; // Which guide recorded this
   location?: string; // Where the attendance was taken
   activity?: string; // What activity was being attended
-  // IDs automatically detected by the recognizer when the session finished
-  autoDetectedIds?: string[];
   security?: {
     transportStatus:
       | "bus"
@@ -1134,9 +1133,9 @@ function RecordDetailsModal({
     groupMembers.includes(person.id),
   );
 
-  // Determine who was auto-detected from the recorded autoDetectedIds stored at record time
-  const autoDetectedIdSet = new Set(record.autoDetectedIds || []);
-  const detectedPeople = groupPeople.filter((p) => autoDetectedIdSet.has(p.id));
+  // Use stored auto-detected IDs from the record
+  const autoSet = new Set(record.autoDetectedIds || []);
+  const detectedPeople = groupPeople.filter((person) => autoSet.has(person.id));
 
   // People manually marked present
   const manuallyPresentPeople = groupPeople.filter(
@@ -1151,12 +1150,13 @@ function RecordDetailsModal({
   );
 
   // Missing people (not detected and not manually marked present)
-  const missingPeople = groupPeople.filter((person) => {
-    const isDetected = autoDetectedIdSet.has(person.id);
-    const isMarkedPresent =
-      record.manualAttendance?.[person.id] === "present";
-    return !isDetected && !isMarkedPresent;
-  });
+  const presentSet = new Set<string>([
+    ...detectedPeople.map((p) => p.id),
+    ...groupPeople
+      .filter((p) => record.manualAttendance?.[p.id] === 'present')
+      .map((p) => p.id),
+  ]);
+  const missingPeople = groupPeople.filter((person) => !presentSet.has(person.id));
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
@@ -1991,15 +1991,12 @@ export default function App() {
 
       if (missingCount > 0) {
         // Show missing people confirmation
-        const inGroup = selectedGroup?.members || [];
-        const autoIds = Array.from(recognizedSessionIds).filter((id): id is string => typeof id === 'string' && inGroup.includes(id));
         const pendingRecordData = {
           id: Date.now().toString(),
           timestamp: new Date(),
           detectedCount: totalDetected,
           totalCapacity: actualGroupSize,
           groupName: selectedGroupName,
-          autoDetectedIds: autoIds,
         };
 
         setPendingRecord(pendingRecordData);
@@ -2008,7 +2005,9 @@ export default function App() {
       } else {
         // No missing people, save record directly
         const inGroup = selectedGroup?.members || [];
-        const autoIds = Array.from(recognizedSessionIds).filter((id): id is string => typeof id === 'string' && inGroup.includes(id));
+        const autoIds = Array.from(recognizedSessionIds).filter(
+          (id): id is string => typeof id === 'string' && inGroup.includes(id)
+        );
         const newRecord: AttendanceRecordType = {
           id: Date.now().toString(),
           timestamp: new Date(),
@@ -2020,9 +2019,6 @@ export default function App() {
         };
 
         setRecords((prev) => [newRecord, ...prev.slice(0, 9)]);
-        showNotification(
-          `Attendance recorded: ${totalDetected}/${actualGroupSize} scouts present for ${selectedGroupName}`,
-        );
         // Stay on camera screen; do not auto-navigate
       }
     } else {
@@ -2118,22 +2114,21 @@ export default function App() {
   const handleConfirmAttendance = () => {
     if (!pendingRecord) return;
 
-    const manualPresentCount = Object.values(
-      manualAttendance,
-    ).filter((status) => status === "present").length;
-    // Final count is session recognized (auto) + manual present
+    const inGroup = selectedGroup?.members || [];
+    const autoIds = Array.from(recognizedSessionIds).filter(
+      (id): id is string => typeof id === 'string' && inGroup.includes(id)
+    );
+    // Final count is session recognized (auto) + manual present (calculate helper already unions)
     const finalPresentCount = calculateTotalDetectedCount();
 
     const newRecord: AttendanceRecordType = {
       ...pendingRecord,
+      autoDetectedIds: autoIds,
       manualAttendance,
       finalPresentCount,
     } as AttendanceRecordType;
 
     setRecords((prev) => [newRecord, ...prev.slice(0, 9)]);
-    showNotification(
-      `Attendance recorded: ${finalPresentCount}/${actualGroupSize} scouts present for ${selectedGroupName}`,
-    );
 
     setShowMissingPeopleModal(false);
     setPendingRecord(null);

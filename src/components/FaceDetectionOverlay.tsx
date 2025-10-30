@@ -1,3 +1,5 @@
+import React from 'react';
+
 interface FaceDetectionOverlayProps {
   detectedCount: number;
   totalCapacity: number;

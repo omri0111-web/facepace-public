@@ -262,21 +262,23 @@ export function VideoTestPage({ groups, people, onBack }: VideoTestPageProps) {
           </div>
         )}
 
-        {/* Download Test Report Button */}
-        {reportDownloadUrl && (
-          <div className="mt-6">
-            <a
-              href={reportDownloadUrl}
-              className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
-              download
-            >
-              📁 Download Test Report (ZIP)
-            </a>
-            <p className="text-sm text-gray-600 mt-2">
-              Contains summary.json and cropped face images
-            </p>
-          </div>
-        )}
+        {/* Download Test Report Button (reserve space to reduce CLS) */}
+        <div className="mt-6 min-h-16">
+          {reportDownloadUrl && (
+            <div>
+              <a
+                href={reportDownloadUrl}
+                className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+                download
+              >
+                📁 Download Test Report (ZIP)
+              </a>
+              <p className="text-sm text-gray-600 mt-2">
+                Contains summary.json and cropped face images
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

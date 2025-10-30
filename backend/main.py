@@ -15,6 +15,83 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from PIL import Image
 
+# ---------------- Photo quality helpers ----------------
+def _to_grayscale(arr: np.ndarray) -> np.ndarray:
+    if arr.ndim == 3 and arr.shape[2] == 3:
+        return (0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]).astype(np.float32)
+    if arr.ndim == 2:
+        return arr.astype(np.float32)
+    if arr.ndim == 3 and arr.shape[2] == 4:
+        rgb = arr[:, :, :3]
+        return (0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]).astype(np.float32)
+    return arr.astype(np.float32)
+
+def _variance_of_laplacian(gray: np.ndarray) -> float:
+    # Simple Laplacian kernel convolution
+    k = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=np.float32)
+    # pad
+    g = gray
+    pad = np.pad(g, ((1,1),(1,1)), mode='reflect')
+    out = (
+        k[0,0]*pad[0:-2,0:-2] + k[0,1]*pad[0:-2,1:-1] + k[0,2]*pad[0:-2,2:] +
+        k[1,0]*pad[1:-1,0:-2] + k[1,1]*pad[1:-1,1:-1] + k[1,2]*pad[1:-1,2:] +
+        k[2,0]*pad[2:,0:-2] + k[2,1]*pad[2:,1:-1] + k[2,2]*pad[2:,2:]
+    )
+    return float(out.var())
+
+def _compute_quality_metrics(img_pil: Image.Image, face_bbox: Tuple[float,float,float,float], kps: Optional[np.ndarray]) -> dict:
+    x1, y1, x2, y2 = face_bbox
+    w, h = img_pil.size
+    # Clamp bbox
+    x1 = max(0, min(w, x1)); x2 = max(0, min(w, x2))
+    y1 = max(0, min(h, y1)); y2 = max(0, min(h, y2))
+    if x2 <= x1 or y2 <= y1:
+        crop = img_pil
+    else:
+        crop = img_pil.crop((int(x1), int(y1), int(x2), int(y2)))
+    arr = np.asarray(crop)
+    gray = _to_grayscale(arr)
+    face_width = float(x2 - x1)
+    sharpness = _variance_of_laplacian(gray)
+    brightness = float(gray.mean())
+    contrast = float(gray.std())
+    # Simple roll proxy from eye points if available (kps shape (5,2))
+    roll_abs = None
+    if kps is not None and isinstance(kps, np.ndarray) and kps.shape[0] >= 2:
+        left_eye, right_eye = kps[0], kps[1]
+        dx = float(right_eye[0] - left_eye[0])
+        dy = float(right_eye[1] - left_eye[1])
+        if dx != 0:
+            roll_abs = abs(np.degrees(np.arctan2(dy, dx)))
+    return {
+        "face_width_px": face_width,
+        "sharpness": sharpness,
+        "brightness": brightness,
+        "contrast": contrast,
+        "roll_abs": roll_abs,
+    }
+
+def _quality_pass(metrics: dict) -> Tuple[bool, List[str]]:
+    reasons: List[str] = []
+    face_width = metrics.get("face_width_px", 0.0)
+    sharp = metrics.get("sharpness", 0.0)
+    bright = metrics.get("brightness", 0.0)
+    contr = metrics.get("contrast", 0.0)
+    roll_abs = metrics.get("roll_abs", None)
+    ok = True
+    # thresholds
+    if face_width < 120:
+        ok = False; reasons.append("Face too small (<120 px)")
+    if sharp < 100:
+        ok = False; reasons.append("Too blurry (low sharpness)")
+    if not (60 <= bright <= 200):
+        ok = False; reasons.append("Lighting issue (too dark/bright)")
+    if contr < 30:
+        ok = False; reasons.append("Low contrast")
+    if roll_abs is not None and roll_abs > 10:
+        reasons.append("Turn head straighter (reduce roll)")
+    return ok, reasons
+
 # Try installed InsightFace first; fallback to local source if needed
 try:
     from insightface.app import FaceAnalysis  # site-packages
@@ -132,8 +209,10 @@ def _save_face_crop(img_pil: Image.Image, bbox: Tuple[float, float, float, float
         timestamp_sec = f"{int(timestamp) / 1000:.1f}"
         filename = f"{clean_name}_{timestamp_sec}.jpg"
     else:
-        # Fallback to original naming for unknown faces
-        filename = f"{prefix}_{uuid.uuid4().hex}.jpg"
+        # Unknown faces: name as unknown_{seconds}.jpg using timestamp from prefix (tsXXXX)
+        timestamp = prefix.replace('ts', '') if prefix.startswith('ts') else '0'
+        timestamp_sec = f"{int(timestamp) / 1000:.1f}"
+        filename = f"unknown_{timestamp_sec}.jpg"
     
     path = os.path.join(out_dir, filename)
     try:
@@ -344,6 +423,28 @@ def detect(req: DetectRequest):
     return {"boxes": out}
 
 
+@app.post("/photo/quality")
+def photo_quality(req: DetectRequest):
+    if face_app is None:
+        raise HTTPException(status_code=400, detail="Service not initialized")
+    img_pil = decode_image_b64(req.image)
+    img = pil_to_ndarray(img_pil)
+    faces = face_app.get(img)
+    if not faces:
+        return {"faces": [], "message": "No face detected", "passed": False}
+    # Score largest face
+    faces.sort(key=lambda f: float((f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1])), reverse=True)
+    f = faces[0]
+    x1, y1, x2, y2 = map(float, f.bbox)
+    kps = getattr(f, 'kps', None)
+    metrics = _compute_quality_metrics(img_pil, (x1,y1,x2,y2), kps)
+    passed, reasons = _quality_pass(metrics)
+    return {
+        "metrics": metrics,
+        "passed": passed,
+        "reasons": reasons
+    }
+
 @app.post("/enroll")
 def enroll(req: EnrollRequest):
     if face_app is None:
@@ -360,6 +461,18 @@ def enroll(req: EnrollRequest):
     face = faces[0]
     emb = np.array(face.normed_embedding, dtype=np.float32)
     emb = l2_normalize(emb)
+
+    # Quality enforcement
+    x1, y1, x2, y2 = map(float, face.bbox)
+    kps = getattr(face, 'kps', None)
+    metrics = _compute_quality_metrics(img_pil, (x1,y1,x2,y2), kps)
+    passed, reasons = _quality_pass(metrics)
+    if not passed:
+        raise HTTPException(status_code=400, detail={
+            "message": "Photo quality too low for enrollment",
+            "metrics": metrics,
+            "reasons": reasons
+        })
 
     conn = get_conn()
     cur = conn.cursor()
@@ -595,11 +708,17 @@ def recognize(req: RecognizeRequest):
         emb = l2_normalize(emb)
         # Cosine similarity since both sides are L2-normalized
         sims = enrolled_mat @ emb  # shape: (N,)
+        # top-1 and top-2
         best_idx = int(np.argmax(sims))
         best_score = float(sims[best_idx])
+        second_score = float(np.partition(sims, -2)[-2]) if sims.shape[0] > 1 else -1.0
+
+        # Face size based rules (disabled small-face gate to restore previous behavior)
+        x1, y1, x2, y2 = map(float, f.bbox)
+        face_w = x2 - x1
+        
         if best_score >= THRESHOLD:
             best_id = enrolled_ids[best_idx]
-            x1, y1, x2, y2 = map(float, f.bbox)
             results.append(
                 {
                     "person_id": best_id,
@@ -738,6 +857,19 @@ def process_video_frame(req: ProcessVideoFrameRequest):
         _record_frame_seen(state, req.timestamp)
         state["totalFacesDetected"] += len(faces)
     results = []
+
+    def _iou(b1, b2) -> float:
+        x1 = max(b1[0], b2[0])
+        y1 = max(b1[1], b2[1])
+        x2 = min(b1[2], b2[2])
+        y2 = min(b1[3], b2[3])
+        inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+        if inter <= 0:
+            return 0.0
+        a1 = (b1[2] - b1[0]) * (b1[3] - b1[1])
+        a2 = (b2[2] - b2[0]) * (b2[3] - b2[1])
+        denom = a1 + a2 - inter
+        return inter / denom if denom > 0 else 0.0
     for f in faces:
         x1, y1, x2, y2 = map(float, f.bbox)
         results.append({
@@ -748,16 +880,30 @@ def process_video_frame(req: ProcessVideoFrameRequest):
             "timestamp": req.timestamp
         })
         if state:
-            # Save detection crop under unknown; recognition endpoint will later save known
-            path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_unknown_dir"], prefix=f"ts{int(req.timestamp*1000)}", person_name=None)
-            _append_event(state, {
-                "timestamp": req.timestamp,
-                "type": "detected",
-                "unknown": True,
-                "box": {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1},
-                "image_path": os.path.relpath(path, state["dir"]) if path else None,
-            })
-            state["unknownFacesDetected"] += 1
+            # Dedupe: if a recognized event exists for same timestamp and overlapping box, skip unknown
+            should_save_unknown = True
+            try:
+                for ev in reversed(state["events"][-50:]):  # scan recent
+                    if ev.get("timestamp") == req.timestamp and ev.get("type") == "recognized":
+                        bx = ev.get("box", {})
+                        rb = (float(bx.get("x", 0)), float(bx.get("y", 0)), float(bx.get("x", 0)) + float(bx.get("width", 0)), float(bx.get("y", 0)) + float(bx.get("height", 0)))
+                        if _iou((x1, y1, x2, y2), rb) >= 0.5:
+                            should_save_unknown = False
+                            break
+            except Exception:
+                pass
+
+            if should_save_unknown:
+                # Save detection crop under unknown; recognition endpoint will later save known
+                path = _save_face_crop(img_pil, (x1, y1, x2, y2), state["faces_unknown_dir"], prefix=f"ts{int(req.timestamp*1000)}", person_name=None)
+                _append_event(state, {
+                    "timestamp": req.timestamp,
+                    "type": "detected",
+                    "unknown": True,
+                    "box": {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1},
+                    "image_path": os.path.relpath(path, state["dir"]) if path else None,
+                })
+                state["unknownFacesDetected"] += 1
     
     return {"faces": results, "timestamp": req.timestamp}
 
@@ -842,7 +988,14 @@ def get_person_photo(person_id: str, filename: str):
     filepath = os.path.join(PHOTOS_DIR, person_id, filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Photo not found")
-    return FileResponse(filepath)
+    return FileResponse(
+        filepath,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 
 class DeletePhotoRequest(BaseModel):
