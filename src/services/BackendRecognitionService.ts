@@ -101,14 +101,29 @@ class BackendRecognitionService {
       try {
         const err = await res.json();
         const detail = err?.detail;
-        if (detail && typeof detail === 'object') {
-          const msg = [detail.message, ...(detail.reasons || [])].filter(Boolean).join('\n• ');
-          throw new Error(msg || 'Enrollment rejected due to photo quality');
+        
+        // Handle structured quality error
+        if (detail && typeof detail === 'object' && detail.message) {
+          const reasons = detail.reasons || [];
+          let errorMsg = detail.message;
+          if (reasons.length > 0) {
+            errorMsg += ':\n• ' + reasons.join('\n• ');
+          }
+          throw new Error(errorMsg);
         }
-      } catch (_) {
-        // fallthrough
+        
+        // Handle simple string error
+        if (typeof detail === 'string') {
+          throw new Error(detail);
+        }
+      } catch (e) {
+        // If error is already an Error object we threw above, re-throw it
+        if (e instanceof Error) {
+          throw e;
+        }
+        // Otherwise fall through to generic error
       }
-      throw new Error('Enrollment failed (bad request)');
+      throw new Error('Enrollment failed - photo quality may be too low. Try better lighting and get closer to camera.');
     }
     return true;
   }

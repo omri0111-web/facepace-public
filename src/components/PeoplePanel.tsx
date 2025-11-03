@@ -504,12 +504,12 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
               />
             </div>
             
-            <Select value={ageGroupFilter} onValueChange={setAgeGroupFilter}>
+            <Select value={ageGroupFilter || 'all'} onValueChange={(val) => setAgeGroupFilter(val === 'all' ? '' : val)}>
               <SelectTrigger className="text-sm">
                 <SelectValue placeholder="Age Group" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Age Groups</SelectItem>
+                <SelectItem value="all">All Age Groups</SelectItem>
                 <SelectItem value="6th Grade">6th Grade</SelectItem>
                 <SelectItem value="7th Grade">7th Grade</SelectItem>
                 <SelectItem value="8th Grade">8th Grade</SelectItem>
@@ -870,7 +870,7 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
               {/* Current Photos Gallery - Reserve space to prevent jumps */}
               <div className="mb-6">
                 <h4 className="text-sm font-medium mb-3">Current Photos ({editingPhotos.photoPaths?.length || 0})</h4>
-                <div className="grid grid-cols-8 gap-2 min-h-[100px]">
+                <div className="grid grid-cols-2 gap-4 min-h-[100px]">
                   {editingPhotos.photoPaths && editingPhotos.photoPaths.length > 0 ? (
                     editingPhotos.photoPaths.map((photoPath, index) => (
                       <div key={index} className="relative aspect-square">

@@ -226,6 +226,9 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
   };
 
   const captureCurrentAngle = async () => {
+    // Prevent capturing more than required photos
+    if (photos.length >= angles.length) return;
+    
     if (!videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
@@ -251,9 +254,9 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
     // Check quality
     await checkPhotoQuality(imageData, newIndex);
     
-    // Move to next angle
+    // Move to next angle only if we haven't reached the limit
     const currentIndex = angles.findIndex(a => a.id === currentAngle);
-    if (currentIndex < angles.length - 1) {
+    if (currentIndex < angles.length - 1 && photos.length + 1 < angles.length) {
       setCurrentAngle(angles[currentIndex + 1].id as any);
     }
   };
@@ -318,18 +321,32 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
 
       // Enroll accepted images to build multiple embeddings for the same person_id
       let numSuccessful = 0;
+      const failureReasons: string[] = [];
+      
       for (let i = 0; i < passingPhotos.length; i++) {
-        const ok = await backendRecognitionService.enrollFace(
-          personId,
-          name,
-          imgElements[i]
-        );
-        if (ok) numSuccessful++;
-        setEnrollmentProgress(50 + (numSuccessful / passingPhotos.length) * 50);
+        try {
+          const ok = await backendRecognitionService.enrollFace(
+            personId,
+            name,
+            imgElements[i]
+          );
+          if (ok) numSuccessful++;
+          setEnrollmentProgress(50 + ((i + 1) / passingPhotos.length) * 50);
+          console.log(`✅ Photo ${i + 1}/${passingPhotos.length} enrolled successfully`);
+        } catch (enrollError: any) {
+          console.error(`❌ Photo ${i + 1} enrollment failed:`, enrollError.message);
+          failureReasons.push(`Photo ${i + 1}: ${enrollError.message}`);
+          // Continue with other photos instead of failing completely
+        }
       }
 
       if (numSuccessful === 0) {
-        throw new Error('Could not enroll photos. Please try again.');
+        const errorMsg = `All ${passingPhotos.length} photos were rejected by backend:\n${failureReasons.join('\n')}`;
+        throw new Error(errorMsg);
+      }
+      
+      if (numSuccessful < passingPhotos.length) {
+        console.warn(`⚠️ Only ${numSuccessful}/${passingPhotos.length} photos were enrolled successfully`);
       }
 
       setEnrollmentProgress(100);
@@ -579,38 +596,6 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                     />
                   ))}
                 </div>
-                
-                {/* Photo gallery with quality badges */}
-                {photos.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 mb-4">
-                    {photos.map((photo, index) => (
-                      <div key={index} className="relative">
-                        <img
-                          src={photo.dataURL}
-                          alt={`Photo ${index + 1}`}
-                          className={`w-full h-20 object-cover rounded-lg border-2 ${
-                            photo.qualityCheck?.passed
-                              ? 'border-green-500'
-                              : photo.qualityCheck
-                              ? 'border-red-500'
-                              : 'border-gray-300'
-                          }`}
-                        />
-                        <div className="absolute top-0 right-0 text-xs px-1 rounded-bl">
-                          {photo.checking ? (
-                            <span className="bg-gray-500 text-white">...</span>
-                          ) : photo.qualityCheck?.passed ? (
-                            <span className="bg-green-500 text-white">✓</span>
-                          ) : photo.qualityCheck ? (
-                            <span className="bg-red-500 text-white">✗</span>
-                          ) : (
-                            <span className="bg-blue-500 text-white">{index + 1}</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
 
                 <div className="relative">
                   <div className="w-full h-64 bg-black rounded-lg overflow-hidden">
@@ -662,18 +647,83 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                     </div>
                   )}
                 </div>
+                
+                {/* Photo gallery with quality badges - Fixed height to prevent jumping */}
+                <div className="min-h-[120px]">
+                  {photos.length > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-xs font-medium text-gray-700 mb-2">
+                        Captured Photos ({photos.length}/{angles.length}) • 
+                        <span className={passingCount >= 3 ? 'text-green-600' : 'text-red-600'}>
+                          {' '}{passingCount} accepted
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {photos.map((photo, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={photo.dataURL}
+                              alt={`Photo ${index + 1}`}
+                              className={`w-full h-20 object-cover rounded-lg border-2 transition-all ${
+                                photo.qualityCheck?.passed
+                                  ? 'border-green-500'
+                                  : photo.qualityCheck
+                                  ? 'border-red-500'
+                                  : 'border-gray-300'
+                              }`}
+                            />
+                            <div className="absolute top-0 right-0 text-xs px-1.5 py-0.5 rounded-bl">
+                              {photo.checking ? (
+                                <span className="bg-gray-500 text-white">...</span>
+                              ) : photo.qualityCheck?.passed ? (
+                                <span className="bg-green-500 text-white px-1">✓</span>
+                              ) : photo.qualityCheck ? (
+                                <span className="bg-red-500 text-white px-1">✗</span>
+                              ) : (
+                                <span className="bg-blue-500 text-white">{index + 1}</span>
+                              )}
+                            </div>
+                            {/* Tooltip with quality reasons on hover */}
+                            {photo.qualityCheck && !photo.qualityCheck.passed && (
+                              <div className="absolute inset-0 bg-black/80 text-white text-[10px] p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none overflow-hidden">
+                                <div className="font-bold mb-0.5">Rejected:</div>
+                                {photo.qualityCheck.reasons.slice(0, 2).map((r, i) => (
+                                  <div key={i} className="truncate">• {r}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                   <div className="text-xs text-yellow-800">
-                    <strong>Tips for best results:</strong>
+                    <strong>📋 Quality Requirements:</strong>
                     <ul className="list-disc list-inside mt-1 space-y-1">
-                      <li>Face the camera directly</li>
-                      <li>Ensure good lighting</li>
-                      <li>Remove glasses if possible</li>
-                      <li>Keep a neutral expression</li>
+                      <li><strong>Get VERY close</strong> - Face should fill most of the oval guide</li>
+                      <li><strong>Bright light on face</strong> - Stand facing a window or lamp</li>
+                      <li><strong>Hold camera steady</strong> - Wait a moment before clicking</li>
+                      <li><strong>Face camera straight</strong> - Minimal head tilt</li>
                     </ul>
+                    <div className="mt-2 text-xs text-yellow-700">
+                      <strong>Tip:</strong> Move closer if you see ✗ on photos! Hover over ✗ to see why it failed.
+                    </div>
                   </div>
                 </div>
+                
+                {/* Retake button if all photos captured but not enough accepted */}
+                {photos.length >= angles.length && passingCount < 3 && (
+                  <Button
+                    onClick={retakePhoto}
+                    variant="outline"
+                    className="w-full border-orange-500 text-orange-700 hover:bg-orange-50"
+                  >
+                    🔄 Clear & Retake All Photos (only {passingCount} accepted)
+                  </Button>
+                )}
               </>
             )}
 
@@ -756,11 +806,30 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
             )}
 
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <div className="text-sm text-red-800">{error}</div>
-              </div>
-            )}
+            {/* Fixed height container for messages to prevent button jumping */}
+            <div className="min-h-[60px]">
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
+                  <div className="text-sm text-red-800">{error}</div>
+                </div>
+              )}
+
+              {/* Status message */}
+              {!error && photos.length > 0 && captureMode === 'camera' && (
+                <div className="text-center text-sm text-gray-600 py-2">
+                  {photos.length >= angles.length ? (
+                    <span className="font-medium">
+                      ✅ All {photos.length} photos captured! • {passingCount} accepted
+                      {passingCount < 3 && <span className="text-red-600"> • Need {3 - passingCount} more good photos</span>}
+                    </span>
+                  ) : (
+                    <span>
+                      {passingCount} of {photos.length} accepted • {angles.length - photos.length} photos remaining
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="flex space-x-3">
               <Button onClick={handleClose} variant="outline" className="flex-1">
@@ -771,24 +840,26 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                   <Button 
                     onClick={startEnrollment}
                     disabled={!canEnroll}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!canEnroll ? `Need at least 3 accepted photos (currently ${passingCount})` : ''}
                   >
                     🚀 Start Enrollment ({passingCount} accepted)
                   </Button>
                 ) : (
                   <Button 
                     onClick={captureCurrentAngle}
-                    disabled={!cameraReady}
-                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    disabled={!cameraReady || photos.length >= angles.length}
+                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50"
                   >
-                    📸 Capture ({photos.length + 1}/{angles.length})
+                    📸 Capture ({Math.min(photos.length + 1, angles.length)}/{angles.length})
                   </Button>
                 )
               ) : (
                 <Button 
                   onClick={startEnrollment}
                   disabled={!canEnroll}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={!canEnroll ? `Need at least 3 accepted photos (currently ${passingCount})` : ''}
                 >
                   🚀 Start Enrollment ({passingCount} accepted)
                 </Button>
