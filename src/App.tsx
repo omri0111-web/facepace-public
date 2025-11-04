@@ -968,10 +968,11 @@ function PersonDetailsModal({
               {!isEditing && (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 transition-colors"
+                  className="px-4 py-2 flex items-center space-x-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm"
                   title="Edit details"
                 >
-                  ✏️
+                  <span>✏️</span>
+                  <span className="text-sm font-medium">Edit</span>
                 </button>
               )}
               <button
@@ -1220,19 +1221,25 @@ function PersonDetailsModal({
         {/* Footer - Save/Cancel buttons when editing */}
         <div className="flex-shrink-0 pb-6 sm:pb-0">
           {isEditing ? (
-            <div className="px-4 sm:px-6 pb-4 border-t border-gray-200 pt-4 flex space-x-3">
-              <button
-                onClick={handleCancel}
-                className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-              >
-                💾 Save Changes
-              </button>
+            <div className="px-4 sm:px-6 pb-4 border-t border-gray-200 pt-4 bg-gray-50">
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleCancel}
+                  className="flex-1 px-4 py-3 bg-white hover:bg-gray-50 text-gray-700 rounded-lg font-medium transition-colors border border-gray-300 shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors shadow-sm flex items-center justify-center space-x-2"
+                >
+                  <span>💾</span>
+                  <span>Save Changes</span>
+                </button>
+              </div>
+              <div className="mt-2 text-center text-xs text-gray-500">
+                Changes will be saved immediately
+              </div>
             </div>
           ) : (
             <div className="h-6 sm:hidden"></div>
