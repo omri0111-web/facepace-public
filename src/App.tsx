@@ -920,7 +920,7 @@ function PersonDetailsModal({
   onClose: () => void;
   person: Person | null;
   groups: Group[];
-  onUpdatePerson: (updatedPerson: Person) => void;
+  onUpdatePerson?: (updatedPerson: Person) => void;
 }) {
   const [isEditing, setIsEditing] = React.useState(false);
   const [editedPerson, setEditedPerson] = React.useState<Person | null>(null);
@@ -941,8 +941,13 @@ function PersonDetailsModal({
   
   const handleSave = () => {
     if (editedPerson) {
-      onUpdatePerson(editedPerson);
-      setIsEditing(false);
+      if (typeof onUpdatePerson === 'function') {
+        onUpdatePerson(editedPerson);
+        setIsEditing(false);
+      } else {
+        console.error('onUpdatePerson is not a function:', typeof onUpdatePerson, onUpdatePerson);
+        alert('Error: Unable to save changes. onUpdatePerson is not available.');
+      }
     }
   };
   
