@@ -914,17 +914,44 @@ function PersonDetailsModal({
   onClose,
   person,
   groups,
+  onUpdatePerson,
 }: {
   isOpen: boolean;
   onClose: () => void;
   person: Person | null;
   groups: Group[];
+  onUpdatePerson: (updatedPerson: Person) => void;
 }) {
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editedPerson, setEditedPerson] = React.useState<Person | null>(null);
+  
+  // Reset edit mode when modal opens/closes or person changes
+  React.useEffect(() => {
+    if (isOpen && person) {
+      setEditedPerson({ ...person });
+      setIsEditing(false);
+    }
+  }, [isOpen, person]);
+  
   if (!isOpen || !person) return null;
 
   const personGroups = groups.filter((group) =>
     person.groups.includes(group.id),
   );
+  
+  const handleSave = () => {
+    if (editedPerson) {
+      onUpdatePerson(editedPerson);
+      setIsEditing(false);
+    }
+  };
+  
+  const handleCancel = () => {
+    setEditedPerson({ ...person });
+    setIsEditing(false);
+  };
+  
+  const currentPerson = isEditing && editedPerson ? editedPerson : person;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
@@ -935,14 +962,25 @@ function PersonDetailsModal({
 
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-lg">
-              Scout Details
+              {isEditing ? 'Edit Scout' : 'Scout Details'}
             </h3>
-            <button
-              onClick={onClose}
-              className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-            >
-              ✕
-            </button>
+            <div className="flex items-center space-x-2">
+              {!isEditing && (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 transition-colors"
+                  title="Edit details"
+                >
+                  ✏️
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         </div>
 
@@ -951,16 +989,16 @@ function PersonDetailsModal({
           {/* Basic Info */}
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 rounded-full bg-gray-200 border-2 border-gray-300 overflow-hidden flex-shrink-0">
-              {person.avatar ? (
+              {currentPerson.avatar ? (
                 <img
-                  src={person.avatar}
-                  alt={person.name}
+                  src={currentPerson.avatar}
+                  alt={currentPerson.name}
                   className="w-full h-full object-cover"
                 />
               ) : (
                 <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
                   <span className="text-white font-medium text-xl">
-                    {person.name
+                    {currentPerson.name
                       .split(" ")
                       .map((n) => n[0])
                       .join("")
@@ -970,15 +1008,45 @@ function PersonDetailsModal({
               )}
             </div>
             <div className="flex-1">
-              <h4 className="font-medium text-xl text-gray-900">
-                {person.name}
-              </h4>
-              <div className="text-sm text-gray-600 mt-1">
-                {person.ageGroup} • Age {person.age}
-              </div>
-              <div className="text-sm text-gray-600">
-                Guides: {person.guides.join(", ")}
-              </div>
+              {isEditing ? (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={editedPerson?.name || ''}
+                    onChange={(e) => setEditedPerson(prev => prev ? {...prev, name: e.target.value} : null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Full Name"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={editedPerson?.ageGroup || ''}
+                      onChange={(e) => setEditedPerson(prev => prev ? {...prev, ageGroup: e.target.value} : null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Grade"
+                    />
+                    <input
+                      type="number"
+                      value={editedPerson?.age || ''}
+                      onChange={(e) => setEditedPerson(prev => prev ? {...prev, age: parseInt(e.target.value) || 0} : null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Age"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h4 className="font-medium text-xl text-gray-900">
+                    {currentPerson.name}
+                  </h4>
+                  <div className="text-sm text-gray-600 mt-1">
+                    {currentPerson.ageGroup} • Age {currentPerson.age}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Guides: {currentPerson.guides.join(", ")}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -987,27 +1055,52 @@ function PersonDetailsModal({
             <h5 className="font-medium text-blue-900 mb-3 flex items-center">
               👨‍👩‍👧‍👦 Parent Contact
             </h5>
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-blue-700 font-medium">
-                  Name:
-                </span>
-                <span className="text-sm text-blue-900">
-                  {person.parentName}
-                </span>
+            {isEditing ? (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs text-blue-700 font-medium block mb-1">Parent Name</label>
+                  <input
+                    type="text"
+                    value={editedPerson?.parentName || ''}
+                    onChange={(e) => setEditedPerson(prev => prev ? {...prev, parentName: e.target.value} : null)}
+                    className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    placeholder="Parent/Guardian name"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-blue-700 font-medium block mb-1">Parent Phone</label>
+                  <input
+                    type="tel"
+                    value={editedPerson?.parentPhone || ''}
+                    onChange={(e) => setEditedPerson(prev => prev ? {...prev, parentPhone: e.target.value} : null)}
+                    className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    placeholder="(555) 000-0000"
+                  />
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-blue-700 font-medium">
-                  Phone:
-                </span>
-                <a
-                  href={`tel:${person.parentPhone}`}
-                  className="text-sm text-blue-600 hover:text-blue-800 underline"
-                >
-                  {person.parentPhone}
-                </a>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-blue-700 font-medium">
+                    Name:
+                  </span>
+                  <span className="text-sm text-blue-900">
+                    {currentPerson.parentName}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-blue-700 font-medium">
+                    Phone:
+                  </span>
+                  <a
+                    href={`tel:${currentPerson.parentPhone}`}
+                    className="text-sm text-blue-600 hover:text-blue-800 underline"
+                  >
+                    {currentPerson.parentPhone}
+                  </a>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Medical Info */}
@@ -1016,24 +1109,36 @@ function PersonDetailsModal({
               🏥 Medical Information
             </h5>
             <div>
-              <span className="text-sm text-red-700 font-medium">
+              <label className="text-sm text-red-700 font-medium block mb-2">
                 Allergies:
-              </span>
-              {person.allergies.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {person.allergies.map((allergy, index) => (
-                    <span
-                      key={index}
-                      className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full border border-red-200"
-                    >
-                      {allergy}
-                    </span>
-                  ))}
-                </div>
+              </label>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editedPerson?.allergies.join(', ') || ''}
+                  onChange={(e) => setEditedPerson(prev => prev ? {...prev, allergies: e.target.value.split(',').map(a => a.trim()).filter(Boolean)} : null)}
+                  className="w-full px-3 py-2 text-sm border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
+                  placeholder="Peanuts, Dairy, etc. (comma-separated)"
+                />
               ) : (
-                <span className="text-sm text-red-600 ml-2">
-                  None reported
-                </span>
+                <>
+                  {currentPerson.allergies.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {currentPerson.allergies.map((allergy, index) => (
+                        <span
+                          key={index}
+                          className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full border border-red-200"
+                        >
+                          {allergy}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-red-600">
+                      None reported
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1075,20 +1180,30 @@ function PersonDetailsModal({
                 <span className="text-sm text-gray-700 font-medium">
                   Email:
                 </span>
-                <a
-                  href={`mailto:${person.email}`}
-                  className="text-sm text-blue-600 hover:text-blue-800 underline"
-                >
-                  {person.email}
-                </a>
+                {isEditing ? (
+                  <input
+                    type="email"
+                    value={editedPerson?.email || ''}
+                    onChange={(e) => setEditedPerson(prev => prev ? {...prev, email: e.target.value} : null)}
+                    className="flex-1 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="scout@example.com"
+                  />
+                ) : (
+                  <a
+                    href={`mailto:${currentPerson.email}`}
+                    className="text-sm text-blue-600 hover:text-blue-800 underline"
+                  >
+                    {currentPerson.email}
+                  </a>
+                )}
               </div>
-              {person.lastSeen && (
+              {currentPerson.lastSeen && (
                 <div className="flex items-center space-x-2">
                   <span className="text-sm text-gray-700 font-medium">
                     Last seen:
                   </span>
                   <span className="text-sm text-gray-600">
-                    {person.lastSeen.toLocaleString([], {
+                    {currentPerson.lastSeen.toLocaleString([], {
                       weekday: "short",
                       month: "short",
                       day: "numeric",
@@ -1102,9 +1217,26 @@ function PersonDetailsModal({
           </div>
         </div>
 
-        {/* Footer - Extra padding for mobile safe area */}
+        {/* Footer - Save/Cancel buttons when editing */}
         <div className="flex-shrink-0 pb-6 sm:pb-0">
-          <div className="h-6 sm:hidden"></div>
+          {isEditing ? (
+            <div className="px-4 sm:px-6 pb-4 border-t border-gray-200 pt-4 flex space-x-3">
+              <button
+                onClick={handleCancel}
+                className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+              >
+                💾 Save Changes
+              </button>
+            </div>
+          ) : (
+            <div className="h-6 sm:hidden"></div>
+          )}
         </div>
       </div>
     </div>
@@ -1630,6 +1762,17 @@ export default function App() {
   const [showGroupSelector, setShowGroupSelector] =
     useState(false);
   const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
+
+  // Update person function
+  const handleUpdatePerson = (updatedPerson: Person) => {
+    setPeople((prev) => 
+      prev.map((p) => (p.id === updatedPerson.id ? updatedPerson : p))
+    );
+    // Also update the selected person if it's currently displayed
+    if (selectedPerson && selectedPerson.id === updatedPerson.id) {
+      setSelectedPerson(updatedPerson);
+    }
+  };
 
   const [people, setPeople] = useState<Person[]>([
     {
@@ -2307,6 +2450,7 @@ export default function App() {
             }}
             person={selectedPerson}
             groups={groups}
+            onUpdatePerson={handleUpdatePerson}
           />
         </div>
       </ScreenWrapper>
@@ -2343,6 +2487,7 @@ export default function App() {
             }}
             person={selectedPerson}
             groups={groups}
+            onUpdatePerson={handleUpdatePerson}
           />
         </div>
       </ScreenWrapper>
@@ -2432,6 +2577,7 @@ export default function App() {
             }}
             person={selectedPerson}
             groups={groups}
+            onUpdatePerson={handleUpdatePerson}
           />
           {/* Record Details Modal */}
           <RecordDetailsModal
@@ -2623,6 +2769,7 @@ export default function App() {
           }}
           person={selectedPerson}
           groups={groups}
+          onUpdatePerson={handleUpdatePerson}
         />
 
         {/* Face Enrollment Modal */}
