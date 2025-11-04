@@ -1777,16 +1777,43 @@ export default function App() {
 
   // Update person function
   const handleUpdatePerson = (updatedPerson: Person) => {
-    setPeople((prev) => 
-      prev.map((p) => (p.id === updatedPerson.id ? updatedPerson : p))
-    );
+    setPeople((prev) => {
+      const updated = prev.map((p) => (p.id === updatedPerson.id ? updatedPerson : p));
+      // Save to localStorage immediately
+      try {
+        localStorage.setItem('scoutcheck-people', JSON.stringify(updated));
+        console.log('✅ Saved to localStorage:', updatedPerson.name);
+      } catch (error) {
+        console.error('Failed to save to localStorage:', error);
+      }
+      return updated;
+    });
     // Also update the selected person if it's currently displayed
     if (selectedPerson && selectedPerson.id === updatedPerson.id) {
       setSelectedPerson(updatedPerson);
     }
   };
 
-  const [people, setPeople] = useState<Person[]>([
+  const [people, setPeople] = useState<Person[]>(() => {
+    // Try to load from localStorage first
+    const savedPeople = localStorage.getItem('scoutcheck-people');
+    if (savedPeople) {
+      try {
+        const parsed = JSON.parse(savedPeople);
+        console.log('📥 Loaded people from localStorage:', parsed.length, 'people');
+        // Convert date strings back to Date objects
+        return parsed.map((p: any) => ({
+          ...p,
+          lastSeen: p.lastSeen ? new Date(p.lastSeen) : undefined,
+        }));
+      } catch (error) {
+        console.error('Failed to load people from localStorage:', error);
+      }
+    }
+    
+    // Default initial data if localStorage is empty
+    console.log('📝 Using default initial data');
+    return [
     {
       id: "1",
       name: "Alex M.",
@@ -1925,7 +1952,8 @@ export default function App() {
       status: "present",
       groups: ["4", "1"],
     },
-  ]);
+  ];
+  });
 
   const [groups, setGroups] = useState<Group[]>([
     {
