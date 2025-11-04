@@ -287,11 +287,23 @@ def init_db():
         if "created_at" not in cols:
             cur.execute("ALTER TABLE embeddings ADD COLUMN created_at REAL")
         
-        # Add photo_paths column to persons table
+        # Add additional columns to persons table
         cur.execute("PRAGMA table_info(persons)")
         person_cols = [row[1] for row in cur.fetchall()]
         if "photo_paths" not in person_cols:
             cur.execute("ALTER TABLE persons ADD COLUMN photo_paths TEXT")
+        if "email" not in person_cols:
+            cur.execute("ALTER TABLE persons ADD COLUMN email TEXT")
+        if "age_group" not in person_cols:
+            cur.execute("ALTER TABLE persons ADD COLUMN age_group TEXT")
+        if "age" not in person_cols:
+            cur.execute("ALTER TABLE persons ADD COLUMN age INTEGER")
+        if "parent_name" not in person_cols:
+            cur.execute("ALTER TABLE persons ADD COLUMN parent_name TEXT")
+        if "parent_phone" not in person_cols:
+            cur.execute("ALTER TABLE persons ADD COLUMN parent_phone TEXT")
+        if "allergies" not in person_cols:
+            cur.execute("ALTER TABLE persons ADD COLUMN allergies TEXT")  # JSON string array
         
         # Add guide_id column to groups table
         cur.execute("PRAGMA table_info(groups)")
@@ -565,6 +577,59 @@ def create_person(req: PersonCreate):
     conn.commit()
     conn.close()
     return {"status": "ok"}
+
+
+class PersonUpdate(BaseModel):
+    person_id: str
+    person_name: str
+    email: Optional[str] = None
+    age_group: Optional[str] = None
+    age: Optional[int] = None
+    parent_name: Optional[str] = None
+    parent_phone: Optional[str] = None
+    allergies: Optional[List[str]] = None
+
+
+@app.post("/person/update")
+def update_person(req: PersonUpdate):
+    """Update person details in the database"""
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    # Serialize allergies as JSON string
+    allergies_json = json.dumps(req.allergies) if req.allergies else None
+    
+    cur.execute(
+        """
+        UPDATE persons 
+        SET person_name = ?,
+            email = ?,
+            age_group = ?,
+            age = ?,
+            parent_name = ?,
+            parent_phone = ?,
+            allergies = ?
+        WHERE person_id = ?
+        """,
+        (req.person_name, req.email, req.age_group, req.age, 
+         req.parent_name, req.parent_phone, allergies_json, req.person_id),
+    )
+    
+    if cur.rowcount == 0:
+        # Person doesn't exist, insert them
+        cur.execute(
+            """
+            INSERT INTO persons 
+            (person_id, person_name, email, age_group, age, parent_name, parent_phone, allergies)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (req.person_id, req.person_name, req.email, req.age_group, req.age,
+             req.parent_name, req.parent_phone, allergies_json),
+        )
+    
+    conn.commit()
+    conn.close()
+    return {"status": "ok", "person_id": req.person_id}
 
 
 class GroupCreate(BaseModel):

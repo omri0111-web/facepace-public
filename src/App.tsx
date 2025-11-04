@@ -920,7 +920,7 @@ function PersonDetailsModal({
   onClose: () => void;
   person: Person | null;
   groups: Group[];
-  onUpdatePerson?: (updatedPerson: Person) => void;
+  onUpdatePerson?: (updatedPerson: Person) => void | Promise<void>;
 }) {
   const [isEditing, setIsEditing] = React.useState(false);
   const [editedPerson, setEditedPerson] = React.useState<Person | null>(null);
@@ -939,11 +939,16 @@ function PersonDetailsModal({
     person.groups.includes(group.id),
   );
   
-  const handleSave = () => {
+  const handleSave = async () => {
     if (editedPerson) {
       if (typeof onUpdatePerson === 'function') {
-        onUpdatePerson(editedPerson);
-        setIsEditing(false);
+        try {
+          await onUpdatePerson(editedPerson);
+          setIsEditing(false);
+        } catch (error) {
+          console.error('Failed to save:', error);
+          // Don't exit edit mode if save failed
+        }
       } else {
         console.error('onUpdatePerson is not a function:', typeof onUpdatePerson, onUpdatePerson);
         alert('Error: Unable to save changes. onUpdatePerson is not available.');
@@ -1776,21 +1781,45 @@ export default function App() {
   const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
 
   // Update person function
-  const handleUpdatePerson = (updatedPerson: Person) => {
-    setPeople((prev) => {
-      const updated = prev.map((p) => (p.id === updatedPerson.id ? updatedPerson : p));
-      // Save to localStorage immediately
-      try {
-        localStorage.setItem('scoutcheck-people', JSON.stringify(updated));
-        console.log('✅ Saved to localStorage:', updatedPerson.name);
-      } catch (error) {
-        console.error('Failed to save to localStorage:', error);
+  const handleUpdatePerson = async (updatedPerson: Person) => {
+    try {
+      // Save to backend database
+      const response = await fetch('http://127.0.0.1:8000/person/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          person_id: updatedPerson.id,
+          person_name: updatedPerson.name,
+          email: updatedPerson.email,
+          age_group: updatedPerson.ageGroup,
+          age: updatedPerson.age,
+          parent_name: updatedPerson.parentName,
+          parent_phone: updatedPerson.parentPhone,
+          allergies: updatedPerson.allergies,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Backend save failed: ${response.status}`);
       }
-      return updated;
-    });
-    // Also update the selected person if it's currently displayed
-    if (selectedPerson && selectedPerson.id === updatedPerson.id) {
-      setSelectedPerson(updatedPerson);
+
+      console.log('✅ Saved to backend database:', updatedPerson.name);
+
+      // Update local state
+      setPeople((prev) => {
+        const updated = prev.map((p) => (p.id === updatedPerson.id ? updatedPerson : p));
+        // Also save to localStorage as backup
+        localStorage.setItem('scoutcheck-people', JSON.stringify(updated));
+        return updated;
+      });
+
+      // Also update the selected person if it's currently displayed
+      if (selectedPerson && selectedPerson.id === updatedPerson.id) {
+        setSelectedPerson(updatedPerson);
+      }
+    } catch (error) {
+      console.error('Failed to save person to backend:', error);
+      alert('Failed to save changes to database. Please try again.');
     }
   };
 
