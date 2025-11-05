@@ -1,0 +1,713 @@
+{
+  "videoName": "1FD129F5-9FEE-42EE-8484-FF6835F05A19.MP4",
+  "peopleRecognized": [
+    "Yaron Shamai"
+  ],
+  "framesProcessed": 45,
+  "totalFacesDetected": 91,
+  "unknownFacesDetected": 13,
+  "details": [
+    {
+      "timestamp": 0.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6620208024978638,
+      "box": {
+        "x": 1089.1875,
+        "y": 1239.2998046875,
+        "width": 355.3966064453125,
+        "height": 499.7745361328125
+      },
+      "image_path": "faces/known/Yaron_Shamai_0.0.jpg"
+    },
+    {
+      "timestamp": 0.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5415462255477905,
+      "box": {
+        "x": 1032.2720947265625,
+        "y": 1041.746337890625,
+        "width": 357.8704833984375,
+        "height": 462.1962890625
+      },
+      "image_path": "faces/known/Yaron_Shamai_0.5.jpg"
+    },
+    {
+      "timestamp": 1.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5243197083473206,
+      "box": {
+        "x": 1027.5325927734375,
+        "y": 1172.7337646484375,
+        "width": 332.8359375,
+        "height": 395.5916748046875
+      },
+      "image_path": "faces/known/Yaron_Shamai_1.0.jpg"
+    },
+    {
+      "timestamp": 1.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6129438877105713,
+      "box": {
+        "x": 1064.48828125,
+        "y": 1380.067138671875,
+        "width": 329.525146484375,
+        "height": 429.2642822265625
+      },
+      "image_path": "faces/known/Yaron_Shamai_1.5.jpg"
+    },
+    {
+      "timestamp": 2.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6806045174598694,
+      "box": {
+        "x": 1080.6002197265625,
+        "y": 1593.6763916015625,
+        "width": 332.2052001953125,
+        "height": 460.7354736328125
+      },
+      "image_path": "faces/known/Yaron_Shamai_2.0.jpg"
+    },
+    {
+      "timestamp": 2.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6922405362129211,
+      "box": {
+        "x": 914.6951904296875,
+        "y": 1436.203125,
+        "width": 328.29541015625,
+        "height": 431.302734375
+      },
+      "image_path": "faces/known/Yaron_Shamai_2.5.jpg"
+    },
+    {
+      "timestamp": 3.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6965088844299316,
+      "box": {
+        "x": 399.6017761230469,
+        "y": 1690.6517333984375,
+        "width": 357.5329895019531,
+        "height": 405.8231201171875
+      },
+      "image_path": "faces/known/Yaron_Shamai_3.0.jpg"
+    },
+    {
+      "timestamp": 3.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6392600536346436,
+      "box": {
+        "x": 327.1879577636719,
+        "y": 1457.398681640625,
+        "width": 367.3940124511719,
+        "height": 465.6639404296875
+      },
+      "image_path": "faces/known/Yaron_Shamai_3.5.jpg"
+    },
+    {
+      "timestamp": 4.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6336764097213745,
+      "box": {
+        "x": 134.03587341308594,
+        "y": 1192.96435546875,
+        "width": 377.90696716308594,
+        "height": 498.6116943359375
+      },
+      "image_path": "faces/known/Yaron_Shamai_4.0.jpg"
+    },
+    {
+      "timestamp": 4.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1973.10693359375,
+        "y": 1042.9188232421875,
+        "width": 188.002197265625,
+        "height": 409.9300537109375
+      },
+      "image_path": "faces/unknown/unknown_4.0.jpg"
+    },
+    {
+      "timestamp": 4.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1288.528076171875,
+        "y": 910.2661743164062,
+        "width": 287.4130859375,
+        "height": 413.24310302734375
+      },
+      "image_path": "faces/unknown/unknown_4.5.jpg"
+    },
+    {
+      "timestamp": 5.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6116647720336914,
+      "box": {
+        "x": 380.8332824707031,
+        "y": 1372.554931640625,
+        "width": 354.1742248535156,
+        "height": 449.8363037109375
+      },
+      "image_path": "faces/known/Yaron_Shamai_5.0.jpg"
+    },
+    {
+      "timestamp": 5.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.638210117816925,
+      "box": {
+        "x": 750.365478515625,
+        "y": 1441.9886474609375,
+        "width": 352.663330078125,
+        "height": 449.51953125
+      },
+      "image_path": "faces/known/Yaron_Shamai_5.5.jpg"
+    },
+    {
+      "timestamp": 6.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5769598484039307,
+      "box": {
+        "x": 1264.7774658203125,
+        "y": 1111.5443115234375,
+        "width": 392.087890625,
+        "height": 537.585205078125
+      },
+      "image_path": "faces/known/Yaron_Shamai_6.0.jpg"
+    },
+    {
+      "timestamp": 6.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5675067901611328,
+      "box": {
+        "x": 1147.5069580078125,
+        "y": 1570.9366455078125,
+        "width": 378.7745361328125,
+        "height": 494.5015869140625
+      },
+      "image_path": "faces/known/Yaron_Shamai_6.5.jpg"
+    },
+    {
+      "timestamp": 7.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5726493000984192,
+      "box": {
+        "x": 1138.844970703125,
+        "y": 1181.60498046875,
+        "width": 367.0982666015625,
+        "height": 536.696044921875
+      },
+      "image_path": "faces/known/Yaron_Shamai_7.0.jpg"
+    },
+    {
+      "timestamp": 7.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6297061443328857,
+      "box": {
+        "x": 1085.581298828125,
+        "y": 1504.149169921875,
+        "width": 336.7647705078125,
+        "height": 408.88525390625
+      },
+      "image_path": "faces/known/Yaron_Shamai_7.5.jpg"
+    },
+    {
+      "timestamp": 8.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.4944233000278473,
+      "box": {
+        "x": 1060.3978271484375,
+        "y": 1538.42724609375,
+        "width": 345.6951904296875,
+        "height": 400.562255859375
+      },
+      "image_path": "faces/known/Yaron_Shamai_8.0.jpg"
+    },
+    {
+      "timestamp": 8.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5068339705467224,
+      "box": {
+        "x": 734.0950317382812,
+        "y": 1559.1549072265625,
+        "width": 334.35931396484375,
+        "height": 395.9205322265625
+      },
+      "image_path": "faces/known/Yaron_Shamai_8.5.jpg"
+    },
+    {
+      "timestamp": 9.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5832432508468628,
+      "box": {
+        "x": 377.7209777832031,
+        "y": 936.5869140625,
+        "width": 374.9945373535156,
+        "height": 423.909423828125
+      },
+      "image_path": "faces/known/Yaron_Shamai_9.0.jpg"
+    },
+    {
+      "timestamp": 9.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5102402567863464,
+      "box": {
+        "x": -28.997703552246094,
+        "y": 2017.5498046875,
+        "width": 353.3792037963867,
+        "height": 438.85986328125
+      },
+      "image_path": "faces/known/Yaron_Shamai_9.5.jpg"
+    },
+    {
+      "timestamp": 9.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1852.25390625,
+        "y": 1593.58447265625,
+        "width": 295.14111328125,
+        "height": 395.353759765625
+      },
+      "image_path": "faces/unknown/unknown_9.5.jpg"
+    },
+    {
+      "timestamp": 10.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1599.8177490234375,
+        "y": 1380.321533203125,
+        "width": 292.22314453125,
+        "height": 372.6068115234375
+      },
+      "image_path": "faces/unknown/unknown_10.0.jpg"
+    },
+    {
+      "timestamp": 10.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1173.353759765625,
+        "y": 929.4395141601562,
+        "width": 307.7982177734375,
+        "height": 432.41253662109375
+      },
+      "image_path": "faces/unknown/unknown_10.5.jpg"
+    },
+    {
+      "timestamp": 11.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5905057191848755,
+      "box": {
+        "x": 293.4062194824219,
+        "y": 1502.043701171875,
+        "width": 343.6242980957031,
+        "height": 377.383544921875
+      },
+      "image_path": "faces/known/Yaron_Shamai_11.0.jpg"
+    },
+    {
+      "timestamp": 11.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5768102407455444,
+      "box": {
+        "x": 650.5158081054688,
+        "y": 1708.0965576171875,
+        "width": 340.1265869140625,
+        "height": 411.7220458984375
+      },
+      "image_path": "faces/known/Yaron_Shamai_11.5.jpg"
+    },
+    {
+      "timestamp": 12.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5650838613510132,
+      "box": {
+        "x": 796.2255249023438,
+        "y": 1623.4879150390625,
+        "width": 323.45086669921875,
+        "height": 399.6298828125
+      },
+      "image_path": "faces/known/Yaron_Shamai_12.0.jpg"
+    },
+    {
+      "timestamp": 12.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5376119613647461,
+      "box": {
+        "x": 560.3150024414062,
+        "y": 1215.261962890625,
+        "width": 710.8566284179688,
+        "height": 896.721923828125
+      },
+      "image_path": "faces/known/Yaron_Shamai_12.5.jpg"
+    },
+    {
+      "timestamp": 13.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5669013261795044,
+      "box": {
+        "x": 721.7891235351562,
+        "y": 730.9082641601562,
+        "width": 761.3464965820312,
+        "height": 972.9148559570312
+      },
+      "image_path": "faces/known/Yaron_Shamai_13.0.jpg"
+    },
+    {
+      "timestamp": 13.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5582457780838013,
+      "box": {
+        "x": 565.6676635742188,
+        "y": 792.4740600585938,
+        "width": 781.9352416992188,
+        "height": 965.0715942382812
+      },
+      "image_path": "faces/known/Yaron_Shamai_13.5.jpg"
+    },
+    {
+      "timestamp": 14.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6254879236221313,
+      "box": {
+        "x": 438.547607421875,
+        "y": 1381.2708740234375,
+        "width": 992.1707763671875,
+        "height": 1189.6317138671875
+      },
+      "image_path": "faces/known/Yaron_Shamai_14.0.jpg"
+    },
+    {
+      "timestamp": 14.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5581611394882202,
+      "box": {
+        "x": 329.79229736328125,
+        "y": 2030.2177734375,
+        "width": 1005.1063842773438,
+        "height": 1131.33935546875
+      },
+      "image_path": "faces/known/Yaron_Shamai_14.5.jpg"
+    },
+    {
+      "timestamp": 15.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5591495037078857,
+      "box": {
+        "x": 13.40313720703125,
+        "y": 854.6634521484375,
+        "width": 1038.8087768554688,
+        "height": 1201.0010986328125
+      },
+      "image_path": "faces/known/Yaron_Shamai_15.0.jpg"
+    },
+    {
+      "timestamp": 15.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5715783834457397,
+      "box": {
+        "x": 578.9590454101562,
+        "y": 1417.01220703125,
+        "width": 383.35394287109375,
+        "height": 440.03369140625
+      },
+      "image_path": "faces/known/Yaron_Shamai_15.5.jpg"
+    },
+    {
+      "timestamp": 16.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.42428064346313477,
+      "box": {
+        "x": 699.508544921875,
+        "y": 1819.0272216796875,
+        "width": 233.274169921875,
+        "height": 208.284423828125
+      },
+      "image_path": "faces/known/Yaron_Shamai_16.0.jpg"
+    },
+    {
+      "timestamp": 16.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1965.01611328125,
+        "y": 1452.0396728515625,
+        "width": 187.96728515625,
+        "height": 306.953125
+      },
+      "image_path": "faces/unknown/unknown_16.0.jpg"
+    },
+    {
+      "timestamp": 16.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1758.37646484375,
+        "y": 1335.427001953125,
+        "width": 208.1876220703125,
+        "height": 295.0277099609375
+      },
+      "image_path": "faces/unknown/unknown_16.5.jpg"
+    },
+    {
+      "timestamp": 16.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 604.6025390625,
+        "y": 1733.5247802734375,
+        "width": 217.0938720703125,
+        "height": 180.5020751953125
+      },
+      "image_path": "faces/unknown/unknown_16.5.jpg"
+    },
+    {
+      "timestamp": 17.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.46797817945480347,
+      "box": {
+        "x": 261.63226318359375,
+        "y": 1421.0411376953125,
+        "width": 267.42425537109375,
+        "height": 283.63525390625
+      },
+      "image_path": "faces/known/Yaron_Shamai_17.0.jpg"
+    },
+    {
+      "timestamp": 17.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1293.72119140625,
+        "y": 1214.8739013671875,
+        "width": 208.564697265625,
+        "height": 286.925537109375
+      },
+      "image_path": "faces/unknown/unknown_17.0.jpg"
+    },
+    {
+      "timestamp": 17.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.45705273747444153,
+      "box": {
+        "x": 870.6469116210938,
+        "y": 1547.89794921875,
+        "width": 230.05841064453125,
+        "height": 254.8218994140625
+      },
+      "image_path": "faces/known/Yaron_Shamai_17.5.jpg"
+    },
+    {
+      "timestamp": 17.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1978.287353515625,
+        "y": 1259.2701416015625,
+        "width": 182.924072265625,
+        "height": 326.1851806640625
+      },
+      "image_path": "faces/unknown/unknown_17.5.jpg"
+    },
+    {
+      "timestamp": 18.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 653.73291015625,
+        "y": 1518.1636962890625,
+        "width": 252.47418212890625,
+        "height": 290.3199462890625
+      },
+      "image_path": "faces/unknown/unknown_18.0.jpg"
+    },
+    {
+      "timestamp": 18.0,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1746.3875732421875,
+        "y": 1191.0797119140625,
+        "width": 223.8153076171875,
+        "height": 317.31591796875
+      },
+      "image_path": "faces/unknown/unknown_18.0.jpg"
+    },
+    {
+      "timestamp": 18.5,
+      "type": "detected",
+      "unknown": true,
+      "box": {
+        "x": 1058.625,
+        "y": 1474.97265625,
+        "width": 238.8570556640625,
+        "height": 305.8892822265625
+      },
+      "image_path": "faces/unknown/unknown_18.5.jpg"
+    },
+    {
+      "timestamp": 19.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5037729144096375,
+      "box": {
+        "x": 1224.2733154296875,
+        "y": 1705.263916015625,
+        "width": 230.6614990234375,
+        "height": 323.0133056640625
+      },
+      "image_path": "faces/known/Yaron_Shamai_19.0.jpg"
+    },
+    {
+      "timestamp": 19.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5448136329650879,
+      "box": {
+        "x": 1276.3675537109375,
+        "y": 1831.357666015625,
+        "width": 230.2034912109375,
+        "height": 327.222900390625
+      },
+      "image_path": "faces/known/Yaron_Shamai_19.5.jpg"
+    },
+    {
+      "timestamp": 20.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.6031795740127563,
+      "box": {
+        "x": 1201.232666015625,
+        "y": 1717.5867919921875,
+        "width": 231.6904296875,
+        "height": 317.6873779296875
+      },
+      "image_path": "faces/known/Yaron_Shamai_20.0.jpg"
+    },
+    {
+      "timestamp": 20.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.48321741819381714,
+      "box": {
+        "x": 1119.3291015625,
+        "y": 1565.6353759765625,
+        "width": 246.7711181640625,
+        "height": 294.422119140625
+      },
+      "image_path": "faces/known/Yaron_Shamai_20.5.jpg"
+    },
+    {
+      "timestamp": 21.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.48374754190444946,
+      "box": {
+        "x": 1331.2113037109375,
+        "y": 1623.5379638671875,
+        "width": 259.54052734375,
+        "height": 289.4814453125
+      },
+      "image_path": "faces/known/Yaron_Shamai_21.0.jpg"
+    },
+    {
+      "timestamp": 21.5,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.4416470527648926,
+      "box": {
+        "x": 1452.5977783203125,
+        "y": 1772.2042236328125,
+        "width": 236.83447265625,
+        "height": 266.3621826171875
+      },
+      "image_path": "faces/known/Yaron_Shamai_21.5.jpg"
+    },
+    {
+      "timestamp": 22.0,
+      "type": "recognized",
+      "person_id": "1761684626946",
+      "person_name": "Yaron Shamai",
+      "confidence": 0.5094689130783081,
+      "box": {
+        "x": 1352.3228759765625,
+        "y": 1598.3052978515625,
+        "width": 252.83203125,
+        "height": 311.5357666015625
+      },
+      "image_path": "faces/known/Yaron_Shamai_22.0.jpg"
+    }
+  ]
+}

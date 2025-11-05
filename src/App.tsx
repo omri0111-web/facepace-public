@@ -716,6 +716,7 @@ function MissingPeopleModal({
   onToggleAttendance,
   onMarkAll,
   onConfirm,
+  onContinueScan,
   setSelectedPerson,
   setShowPersonDetails,
 }: {
@@ -731,6 +732,7 @@ function MissingPeopleModal({
   onToggleAttendance: (personId: string) => void;
   onMarkAll: (status: "present" | "absent") => void;
   onConfirm: () => void;
+  onContinueScan?: () => void;
   setSelectedPerson: (person: Person) => void;
   setShowPersonDetails: (show: boolean) => void;
 }) {
@@ -745,6 +747,7 @@ function MissingPeopleModal({
   // In real face recognition mode, the detectedCount comes from actual AI recognition
   // Missing people are those not yet marked as present (either by AI or manually)
   const autoDetectedSet = new Set(autoDetectedIds || []);
+  const autoDetectedPeople = groupPeople.filter((person) => autoDetectedSet.has(person.id));
   const missingPeople = groupPeople.filter((person) => {
     const autoDetected = autoDetectedSet.has(person.id);
     const manuallyPresent = manualAttendance[person.id] === "present";
@@ -784,6 +787,37 @@ function MissingPeopleModal({
             missing from {selectedGroup.name}
           </div>
         </div>
+
+        {/* Auto-detected list */}
+        {autoDetectedPeople.length > 0 && (
+          <div className="px-3 sm:px-4 pt-3">
+            <div className="text-sm font-medium text-gray-900 mb-2">Auto‑detected:</div>
+            <div className="space-y-2">
+              {autoDetectedPeople.map((person) => (
+                <div key={person.id} className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100">
+                  <div className="flex items-center space-x-3 flex-1">
+                    <div className="w-12 h-12 rounded-full bg-gray-200 border-2 border-gray-300 overflow-hidden flex-shrink-0">
+                      {person.avatar ? (
+                        <img src={person.avatar} alt={person.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                          <span className="text-white font-medium text-lg">
+                            {person.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 truncate">{person.name}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{person.ageGroup} • {person.guides.join(', ')}</div>
+                    </div>
+                  </div>
+                  <div className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">Auto</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Missing People List - Expanded Scrollable Area */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 min-h-[200px]">
@@ -892,13 +926,23 @@ function MissingPeopleModal({
             </div>
           </div>
 
-          {/* Confirm Button */}
-          <button
-            onClick={onConfirm}
-            className="w-full py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors text-base touch-manipulation"
-          >
-            Finish Recording
-          </button>
+          {/* Continue / Confirm Buttons */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                if (onContinueScan) onContinueScan(); else onClose();
+              }}
+              className="py-3 bg-white border border-blue-200 text-blue-700 rounded-xl font-medium hover:bg-blue-50 transition-colors text-base touch-manipulation"
+            >
+              Continue scanning
+            </button>
+            <button
+              onClick={onConfirm}
+              className="py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors text-base touch-manipulation"
+            >
+              Finish Recording
+            </button>
+          </div>
 
           {/* Extra padding for mobile safe area */}
           <div className="h-4 sm:hidden"></div>
@@ -2825,6 +2869,12 @@ export default function App() {
           onToggleAttendance={handleToggleAttendance}
           onMarkAll={handleMarkAll}
           onConfirm={handleConfirmAttendance}
+          onContinueScan={() => {
+            // Close modal and keep scanning the same group
+            setShowMissingPeopleModal(false);
+            setRecordingFinished(false);
+            setIsRecording(true);
+          }}
           setSelectedPerson={setSelectedPerson}
           setShowPersonDetails={setShowPersonDetails}
         />
