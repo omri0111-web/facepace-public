@@ -305,11 +305,17 @@ def init_db():
         if "allergies" not in person_cols:
             cur.execute("ALTER TABLE persons ADD COLUMN allergies TEXT")  # JSON string array
         
-        # Add guide_id column to groups table
+        # Add columns to groups table
         cur.execute("PRAGMA table_info(groups)")
         group_cols = [row[1] for row in cur.fetchall()]
         if "guide_id" not in group_cols:
             cur.execute("ALTER TABLE groups ADD COLUMN guide_id TEXT")
+        if "age" not in group_cols:
+            cur.execute("ALTER TABLE groups ADD COLUMN age TEXT")
+        if "guides_info" not in group_cols:
+            cur.execute("ALTER TABLE groups ADD COLUMN guides_info TEXT")
+        if "notes" not in group_cols:
+            cur.execute("ALTER TABLE groups ADD COLUMN notes TEXT")
     except Exception:
         pass
     conn.commit()
@@ -1105,12 +1111,14 @@ def delete_person_photo(req: DeletePhotoRequest):
 class UpdateGroupRequest(BaseModel):
     group_id: str
     group_name: Optional[str] = None
-    guide_id: Optional[str] = None
+    age: Optional[str] = None
+    guides_info: Optional[str] = None
+    notes: Optional[str] = None
 
 
 @app.post("/group/update")
 def update_group(req: UpdateGroupRequest):
-    """Update group details including guide assignment"""
+    """Update group details"""
     conn = get_conn()
     cur = conn.cursor()
     
@@ -1120,10 +1128,22 @@ def update_group(req: UpdateGroupRequest):
             (req.group_name, req.group_id)
         )
     
-    if req.guide_id is not None:
+    if req.age is not None:
         cur.execute(
-            "UPDATE groups SET guide_id = ? WHERE group_id = ?",
-            (req.guide_id, req.group_id)
+            "UPDATE groups SET age = ? WHERE group_id = ?",
+            (req.age, req.group_id)
+        )
+    
+    if req.guides_info is not None:
+        cur.execute(
+            "UPDATE groups SET guides_info = ? WHERE group_id = ?",
+            (req.guides_info, req.group_id)
+        )
+    
+    if req.notes is not None:
+        cur.execute(
+            "UPDATE groups SET notes = ? WHERE group_id = ?",
+            (req.notes, req.group_id)
         )
     
     conn.commit()
@@ -1133,20 +1153,22 @@ def update_group(req: UpdateGroupRequest):
 
 @app.get("/groups")
 def get_groups():
-    """Get all groups with their members and guide"""
+    """Get all groups with their members and metadata"""
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT group_id, group_name, guide_id FROM groups")
+    cur.execute("SELECT group_id, group_name, age, guides_info, notes FROM groups")
     groups_rows = cur.fetchall()
     
     result = []
-    for group_id, group_name, guide_id in groups_rows:
+    for group_id, group_name, age, guides_info, notes in groups_rows:
         cur.execute("SELECT person_id FROM group_members WHERE group_id = ?", (group_id,))
         members = [row[0] for row in cur.fetchall()]
         result.append({
             "group_id": group_id,
             "group_name": group_name,
-            "guide_id": guide_id,
+            "age": age,
+            "guides_info": guides_info,
+            "notes": notes,
             "members": members
         })
     

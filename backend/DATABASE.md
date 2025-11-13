@@ -47,12 +47,14 @@ Stores group information (e.g., patrols, classes).
 |--------|------|-------------|
 | `group_id` | TEXT | Primary key, unique identifier for each group |
 | `group_name` | TEXT | Name of the group |
-| `guide_id` | TEXT | Person ID of the group guide/leader (optional) |
+| `age` | TEXT | Age group (optional) |
+| `guides_info` | TEXT | Guides names and phone numbers (optional) |
+| `notes` | TEXT | Additional notes about the group (optional) |
 
 **Example**:
 ```sql
-INSERT INTO groups (group_id, group_name, guide_id) 
-VALUES ('patrol_1', 'Eagle Patrol', '1234567890');
+INSERT INTO groups (group_id, group_name, age, guides_info, notes) 
+VALUES ('patrol_1', 'Eagle Patrol', '12-14', 'John Doe - 555-1234', 'Meets on Tuesdays');
 ```
 
 ### 4. `group_members`
@@ -76,7 +78,6 @@ VALUES ('patrol_1', '1234567890');
 ```
 persons (1) ----< (N) embeddings
 persons (N) ----< (N) group_members >---- (N) groups
-persons (1) ----< (1) groups.guide_id [optional]
 ```
 
 ## Photo Storage

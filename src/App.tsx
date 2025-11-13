@@ -54,6 +54,11 @@ export interface Person {
   groups: string[]; // Array of group IDs this person belongs to
 }
 
+export interface Guide {
+  name: string;
+  phone: string;
+}
+
 export interface Group {
   id: string;
   name: string;
@@ -63,7 +68,10 @@ export interface Group {
   isActive: boolean;
   lastSession?: Date;
   members: string[]; // Array of person IDs in this group
-  guideId?: string; // ID of the person who is the guide for this group
+  age?: string; // Age group
+  guides?: Guide[]; // Array of guides with name and phone
+  guidesInfo?: string; // JSON string for backend storage
+  notes?: string; // Additional notes
   subGroups?: string[]; // Array of nested group IDs
   joinLink?: string; // Shareable link for joining
   parentGroup?: string; // Parent group ID if this is a subgroup
@@ -756,11 +764,11 @@ function MissingPeopleModal({
 
   // Auto-detected count
   const autoDetectedCount = autoDetectedIds.length;
-  // Manual present count (not already auto-detected)
-  const manualPresentCount = Object.values(manualAttendance).filter(
-    (status) => status === "present"
+  // Manual present count (excluding those already auto-detected to prevent double counting)
+  const manualPresentCount = Object.entries(manualAttendance).filter(
+    ([personId, status]) => status === "present" && !autoDetectedSet.has(personId)
   ).length;
-  // Total = auto + manual (no double counting since we exclude auto-detected from manual marking)
+  // Total = auto + manual (no double counting)
   const totalPresent = autoDetectedCount + manualPresentCount;
 
   return (
@@ -2138,6 +2146,16 @@ export default function App() {
             const byId = new Map(prev.map(g => [g.id, g] as const));
             const merged = [...prev];
             for (const g of apiGroups) {
+              // Parse guidesInfo JSON string into guides array
+              let guides: Guide[] | undefined;
+              if (g.guides_info) {
+                try {
+                  guides = JSON.parse(g.guides_info);
+                } catch {
+                  guides = undefined;
+                }
+              }
+
               if (byId.has(g.group_id)) {
                 const idx = merged.findIndex(x => x.id === g.group_id);
                 if (idx >= 0) {
@@ -2145,6 +2163,10 @@ export default function App() {
                     ...merged[idx],
                     members: g.members || [],
                     memberCount: (g.members || []).length,
+                    age: g.age,
+                    guides,
+                    guidesInfo: g.guides_info,
+                    notes: g.notes,
                   };
                 }
               } else {
@@ -2156,6 +2178,10 @@ export default function App() {
                   capacity: 30,
                   isActive: true,
                   members: g.members || [],
+                  age: g.age,
+                  guides,
+                  guidesInfo: g.guides_info,
+                  notes: g.notes,
                 });
               }
             }
@@ -2210,10 +2236,15 @@ export default function App() {
   // Calculate total detected count including manual attendance (avoid double counting)
   const calculateTotalDetectedCount = () => {
     if (!selectedGroup) return 0;
-    // Persistent recognized count within session + manual attendance
-    const sessionRecognizedCount = Array.from(recognizedSessionIds).filter(id => selectedGroup.members.includes(id)).length;
-    const manualPresentCount = Object.values(manualAttendance).filter((status) => status === "present").length;
-    return sessionRecognizedCount + manualPresentCount;
+    // Get auto-detected people in this group
+    const autoDetectedIds = new Set(
+      Array.from(recognizedSessionIds).filter(id => selectedGroup.members.includes(id))
+    );
+    // Count manual present, excluding those already auto-detected
+    const manualPresentCount = Object.entries(manualAttendance).filter(
+      ([personId, status]) => status === "present" && !autoDetectedIds.has(personId)
+    ).length;
+    return autoDetectedIds.size + manualPresentCount;
   };
 
   // Calculate missing people count for red indicator - now considers manual attendance
@@ -2256,7 +2287,8 @@ export default function App() {
         };
 
         setPendingRecord(pendingRecordData);
-        setManualAttendance({});
+        // DON'T clear manual attendance here - preserve previous manual selections
+        // setManualAttendance({});
         setShowMissingPeopleModal(true);
       } else {
         // No missing people, save record directly

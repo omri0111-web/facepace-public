@@ -225,11 +225,25 @@ class BackendRecognitionService {
     });
   }
 
-  async fetchGroups(): Promise<{ group_id: string; group_name: string; members: string[] }[]> {
+  async fetchGroups(): Promise<{ 
+    group_id: string; 
+    group_name: string; 
+    age?: string; 
+    guides_info?: string; 
+    notes?: string; 
+    members: string[] 
+  }[]> {
     const res = await fetch(`${BASE_URL}/groups`);
     if (!res.ok) return [];
     const json = await res.json();
-    const groups = (json.groups || []) as Array<{ group_id: string; group_name: string; members: string[] }>;
+    const groups = (json.groups || []) as Array<{ 
+      group_id: string; 
+      group_name: string; 
+      age?: string; 
+      guides_info?: string; 
+      notes?: string; 
+      members: string[] 
+    }>;
     return groups;
   }
 
@@ -246,14 +260,6 @@ class BackendRecognitionService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ person_id: personId })
-    });
-  }
-
-  async deleteGroup(groupId: string): Promise<void> {
-    await fetch(`${BASE_URL}/group/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ group_id: groupId })
     });
   }
 
@@ -471,19 +477,33 @@ class BackendRecognitionService {
   }
 
   // Group Management Methods
-  async updateGroup(groupId: string, updates: { groupName?: string; guideId?: string }): Promise<void> {
+  async updateGroup(groupId: string, updates: { groupName?: string; age?: string; guidesInfo?: string; notes?: string }): Promise<void> {
     const response = await fetch(`${BASE_URL}/group/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         group_id: groupId, 
         group_name: updates.groupName,
-        guide_id: updates.guideId
+        age: updates.age,
+        guides_info: updates.guidesInfo,
+        notes: updates.notes
       })
     });
     
     if (!response.ok) {
       throw new Error(`Group update failed: ${response.statusText}`);
+    }
+  }
+
+  async deleteGroup(groupId: string): Promise<void> {
+    const response = await fetch(`${BASE_URL}/group/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_id: groupId })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Group deletion failed: ${response.statusText}`);
     }
   }
 

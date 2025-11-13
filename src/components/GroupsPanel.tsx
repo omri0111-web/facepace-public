@@ -25,6 +25,11 @@ interface Person {
   groups: string[]; // Array of group IDs this person belongs to
 }
 
+interface Guide {
+  name: string;
+  phone: string;
+}
+
 interface Group {
   id: string;
   name: string;
@@ -34,6 +39,10 @@ interface Group {
   isActive: boolean;
   lastSession?: Date;
   members: string[];
+  age?: string;
+  guides?: Guide[];
+  guidesInfo?: string;
+  notes?: string;
   subGroups?: string[];
   joinLink?: string;
   parentGroup?: string;
@@ -68,7 +77,9 @@ export function GroupsPanel({
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [newGroupForm, setNewGroupForm] = useState({
     name: '',
-    description: '',
+    age: '',
+    guides: [{ name: '', phone: '' }],
+    notes: '',
     capacity: 10,
     parentGroup: ''
   });
@@ -122,17 +133,89 @@ export function GroupsPanel({
   };
 
   const handleEditGroup = (group: Group) => {
-    setEditingGroup({ ...group });
+    // Parse guidesInfo if it exists but guides array doesn't
+    let guides = group.guides;
+    if (!guides && group.guidesInfo) {
+      try {
+        guides = JSON.parse(group.guidesInfo);
+      } catch {
+        guides = [{ name: '', phone: '' }];
+      }
+    }
+    if (!guides || guides.length === 0) {
+      guides = [{ name: '', phone: '' }];
+    }
+    setEditingGroup({ ...group, guides });
     setViewMode('edit');
   };
 
-  const handleSaveGroup = () => {
+  const handleSaveGroup = async () => {
     if (!editingGroup) return;
 
+    // Save scroll position before update
+    const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
+
+    // Set flag to prevent useEffect from triggering
+    isUpdatingRef.current = true;
+
+    // Filter out empty guides and update guidesInfo
+    const validGuides = editingGroup.guides?.filter(g => g.name.trim() || g.phone.trim()) || [];
+    const updatedGroup = {
+      ...editingGroup,
+      guides: validGuides.length > 0 ? validGuides : undefined,
+      guidesInfo: validGuides.length > 0 ? JSON.stringify(validGuides) : undefined
+    };
+
     const updatedGroups = groups.map(group => 
-      group.id === editingGroup.id ? editingGroup : group
+      group.id === updatedGroup.id ? updatedGroup : group
     );
     setGroups(updatedGroups);
+    
+    // Persist to backend
+    try {
+      await backendRecognitionService.updateGroup(updatedGroup.id, {
+        groupName: updatedGroup.name,
+        age: updatedGroup.age,
+        guidesInfo: updatedGroup.guidesInfo,
+        notes: updatedGroup.notes
+      });
+    } catch (error) {
+      console.error('Failed to save group to backend:', error);
+    }
+    
+    setViewMode('list');
+    setEditingGroup(null);
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!confirm('Are you sure you want to delete this group? This action cannot be undone.')) {
+      return;
+    }
+
+    // Save scroll position before update
+    const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
+
+    // Set flag to prevent useEffect from triggering
+    isUpdatingRef.current = true;
+
+    // Remove group from state
+    const updatedGroups = groups.filter(g => g.id !== groupId);
+    setGroups(updatedGroups);
+
+    // Remove group from all people's groups arrays
+    const updatedPeople = people.map(person => ({
+      ...person,
+      groups: person.groups.filter(gid => gid !== groupId)
+    }));
+    setPeople(updatedPeople);
+
+    // Delete from backend
+    try {
+      await backendRecognitionService.deleteGroup(groupId);
+    } catch (error) {
+      console.error('Failed to delete group from backend:', error);
+    }
+    
     setViewMode('list');
     setEditingGroup(null);
   };
@@ -140,10 +223,23 @@ export function GroupsPanel({
   const handleCreateGroup = () => {
     if (!newGroupForm.name) return;
 
+    // Save scroll position before update
+    const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
+
+    // Set flag to prevent useEffect from triggering
+    isUpdatingRef.current = true;
+
+    // Filter out empty guides
+    const validGuides = newGroupForm.guides.filter(g => g.name.trim() || g.phone.trim());
+
     const newGroup: Group = {
       id: Date.now().toString(),
       name: newGroupForm.name,
-      description: newGroupForm.description,
+      description: '',
+      age: newGroupForm.age,
+      guides: validGuides.length > 0 ? validGuides : undefined,
+      guidesInfo: validGuides.length > 0 ? JSON.stringify(validGuides) : undefined,
+      notes: newGroupForm.notes,
       capacity: newGroupForm.capacity,
       memberCount: 0, // Keep for backwards compatibility
       isActive: true,
@@ -169,7 +265,7 @@ export function GroupsPanel({
       setGroups([...groups, newGroup]);
     }
 
-    setNewGroupForm({ name: '', description: '', capacity: 10, parentGroup: '' });
+    setNewGroupForm({ name: '', age: '', guides: [{ name: '', phone: '' }], notes: '', capacity: 10, parentGroup: '' });
     setShowCreateForm(false);
     // Persist to backend
     backendRecognitionService.createGroup(newGroup.id, newGroup.name).catch(() => {});
@@ -390,39 +486,39 @@ export function GroupsPanel({
               </Button>
             </div>
 
-            {/* Guide Assignment */}
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <h4 className="text-sm font-semibold mb-3 text-blue-900">👨‍🏫 Group Guide</h4>
-              <Select 
-                value={selectedGroup.guideId || 'none'} 
-                onValueChange={(guideId) => {
-                  const actualGuideId = guideId === 'none' ? undefined : guideId;
-                  const updatedGroups = groups.map(g => 
-                    g.id === selectedGroup.id ? { ...g, guideId: actualGuideId } : g
-                  );
-                  setGroups(updatedGroups);
-                  setSelectedGroup({ ...selectedGroup, guideId: actualGuideId });
-                  
-                  // Persist to backend
-                  backendRecognitionService.updateGroup(selectedGroup.id, { guideId: actualGuideId }).catch(() => {});
-                }}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue placeholder="Select a guide..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Guide</SelectItem>
-                  {groupMembers.filter(person => person && person.id && person.name).map(person => (
-                    <SelectItem key={person.id} value={person.id}>
-                      {person.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedGroup.guideId && (
-                <p className="text-xs text-blue-700 mt-2">
-                  ℹ️ The guide will not be counted in attendance
-                </p>
+            {/* Group Information */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold mb-2 text-blue-900">Age Group</h4>
+                <p className="text-sm text-gray-700">{selectedGroup.age || 'Not specified'}</p>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold mb-2 text-blue-900">Guides</h4>
+                {selectedGroup.guides && selectedGroup.guides.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedGroup.guides.map((guide, index) => (
+                      <div key={index} className="bg-white p-2 rounded border border-blue-200">
+                        <div className="text-sm font-medium text-gray-900">{guide.name}</div>
+                        {guide.phone && (
+                          <a 
+                            href={`tel:${guide.phone}`}
+                            className="text-sm text-blue-600 hover:text-blue-800 underline"
+                          >
+                            📞 {guide.phone}
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-700">Not specified</p>
+                )}
+              </div>
+              {selectedGroup.notes && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2 text-blue-900">Notes</h4>
+                  <p className="text-sm text-gray-700 whitespace-pre-line">{selectedGroup.notes}</p>
+                </div>
               )}
             </div>
 
@@ -437,14 +533,7 @@ export function GroupsPanel({
                       <AvatarFallback>{person.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base font-medium">{person.name}</span>
-                        {selectedGroup.guideId === person.id && (
-                          <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
-                            👨‍🏫 Guide
-                          </Badge>
-                        )}
-                      </div>
+                      <span className="text-base font-medium">{person.name}</span>
                       <div className="text-sm text-gray-600">{person.ageGroup} • {person.guides.join(', ')}</div>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -662,21 +751,71 @@ export function GroupsPanel({
           </div>
           
           <div>
-            <label className="text-sm font-medium">Description</label>
-            <Textarea
-              value={editingGroup.description}
-              onChange={(e) => setEditingGroup({...editingGroup, description: e.target.value})}
-              rows={3}
+            <label className="text-sm font-medium">Age</label>
+            <Input
+              value={editingGroup.age || ''}
+              onChange={(e) => setEditingGroup({...editingGroup, age: e.target.value})}
               className="mt-1"
             />
           </div>
           
           <div>
-            <label className="text-sm font-medium">Capacity</label>
-            <Input
-              type="number"
-              value={editingGroup.capacity}
-              onChange={(e) => setEditingGroup({...editingGroup, capacity: parseInt(e.target.value) || 0})}
+            <label className="text-sm font-medium">Guides</label>
+            <div className="mt-2 space-y-2">
+              {(editingGroup.guides || [{ name: '', phone: '' }]).map((guide, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    placeholder="Guide Name"
+                    value={guide.name}
+                    onChange={(e) => {
+                      const newGuides = [...(editingGroup.guides || [])];
+                      newGuides[index].name = e.target.value;
+                      setEditingGroup({...editingGroup, guides: newGuides});
+                    }}
+                    className="flex-1"
+                  />
+                  <Input
+                    placeholder="Phone"
+                    value={guide.phone}
+                    onChange={(e) => {
+                      const newGuides = [...(editingGroup.guides || [])];
+                      newGuides[index].phone = e.target.value;
+                      setEditingGroup({...editingGroup, guides: newGuides});
+                    }}
+                    className="flex-1"
+                  />
+                  {(editingGroup.guides?.length || 0) > 1 && (
+                    <Button
+                      onClick={() => {
+                        const newGuides = (editingGroup.guides || []).filter((_, i) => i !== index);
+                        setEditingGroup({...editingGroup, guides: newGuides});
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="text-red-500"
+                    >
+                      ✕
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <Button
+                onClick={() => setEditingGroup({...editingGroup, guides: [...(editingGroup.guides || []), { name: '', phone: '' }]})}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                + Add Guide
+              </Button>
+            </div>
+          </div>
+          
+          <div>
+            <label className="text-sm font-medium">Notes</label>
+            <Textarea
+              value={editingGroup.notes || ''}
+              onChange={(e) => setEditingGroup({...editingGroup, notes: e.target.value})}
+              rows={3}
               className="mt-1"
             />
           </div>
@@ -707,16 +846,25 @@ export function GroupsPanel({
           )}
         </div>
         
-        <div className="p-4 border-t border-gray-200 flex space-x-2">
-          <Button onClick={handleSaveGroup} className="flex-1">
-            Save Changes
-          </Button>
+        <div className="p-4 border-t border-gray-200 space-y-2">
+          <div className="flex space-x-2">
+            <Button onClick={handleSaveGroup} className="flex-1">
+              Save Changes
+            </Button>
+            <Button 
+              onClick={() => setViewMode('list')}
+              variant="outline"
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+          </div>
           <Button 
-            onClick={() => setViewMode('list')}
+            onClick={() => editingGroup && handleDeleteGroup(editingGroup.id)}
             variant="outline"
-            className="flex-1"
+            className="w-full text-red-600 hover:text-red-800 hover:bg-red-50 border-red-300"
           >
-            Cancel
+            🗑️ Delete Group
           </Button>
         </div>
       </div>
@@ -861,32 +1009,70 @@ export function GroupsPanel({
                   onChange={(e) => setNewGroupForm({...newGroupForm, name: e.target.value})}
                   className="h-12"
                 />
+                <Input
+                  placeholder="Age"
+                  value={newGroupForm.age}
+                  onChange={(e) => setNewGroupForm({...newGroupForm, age: e.target.value})}
+                  className="h-12"
+                />
+                
+                {/* Guides Section */}
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Guides</label>
+                  {newGroupForm.guides.map((guide, index) => (
+                    <div key={index} className="flex gap-2 mb-2">
+                      <Input
+                        placeholder="Guide Name"
+                        value={guide.name}
+                        onChange={(e) => {
+                          const newGuides = [...newGroupForm.guides];
+                          newGuides[index].name = e.target.value;
+                          setNewGroupForm({...newGroupForm, guides: newGuides});
+                        }}
+                        className="flex-1"
+                      />
+                      <Input
+                        placeholder="Phone"
+                        value={guide.phone}
+                        onChange={(e) => {
+                          const newGuides = [...newGroupForm.guides];
+                          newGuides[index].phone = e.target.value;
+                          setNewGroupForm({...newGroupForm, guides: newGuides});
+                        }}
+                        className="flex-1"
+                      />
+                      {newGroupForm.guides.length > 1 && (
+                        <Button
+                          onClick={() => {
+                            const newGuides = newGroupForm.guides.filter((_, i) => i !== index);
+                            setNewGroupForm({...newGroupForm, guides: newGuides});
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="text-red-500"
+                        >
+                          ✕
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <Button
+                    onClick={() => setNewGroupForm({...newGroupForm, guides: [...newGroupForm.guides, { name: '', phone: '' }]})}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    + Add Guide
+                  </Button>
+                </div>
+                
                 <Textarea
-                  placeholder="Description"
-                  value={newGroupForm.description}
-                  onChange={(e) => setNewGroupForm({...newGroupForm, description: e.target.value})}
+                  placeholder="Notes"
+                  value={newGroupForm.notes}
+                  onChange={(e) => setNewGroupForm({...newGroupForm, notes: e.target.value})}
                   rows={3}
                   className="resize-none"
                 />
-                <Input
-                  placeholder="Capacity"
-                  type="number"
-                  value={newGroupForm.capacity}
-                  onChange={(e) => setNewGroupForm({...newGroupForm, capacity: parseInt(e.target.value) || 0})}
-                  className="h-12"
-                />
-                <Select onValueChange={(value) => setNewGroupForm({...newGroupForm, parentGroup: value})}>
-                  <SelectTrigger className="h-12">
-                    <SelectValue placeholder="Parent group (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {groups.map(group => (
-                      <SelectItem key={group.id} value={group.id}>
-                        {group.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="flex space-x-3 mt-6">
                 <Button onClick={handleCreateGroup} className="flex-1 h-12">

@@ -35,6 +35,11 @@ interface Person {
   groups: string[]; // Array of group IDs this person belongs to
 }
 
+interface Guide {
+  name: string;
+  phone: string;
+}
+
 interface Group {
   id: string;
   name: string;
@@ -44,6 +49,10 @@ interface Group {
   isActive: boolean;
   lastSession?: Date;
   members: string[];
+  age?: string;
+  guides?: Guide[];
+  guidesInfo?: string;
+  notes?: string;
   subGroups?: string[];
   joinLink?: string;
   parentGroup?: string;
