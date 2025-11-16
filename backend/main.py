@@ -463,6 +463,27 @@ def photo_quality(req: DetectRequest):
         "reasons": reasons
     }
 
+@app.post("/embedding")
+def get_embedding(req: DetectRequest):
+    """Get face embedding from an image without saving it"""
+    if face_app is None:
+        raise HTTPException(status_code=400, detail="Service not initialized")
+
+    img_pil = decode_image_b64(req.image)
+    img = pil_to_ndarray(img_pil)
+    faces = face_app.get(img)
+    if not faces:
+        raise HTTPException(status_code=400, detail="No face detected")
+
+    # Take the largest face
+    faces.sort(key=lambda f: float((f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])), reverse=True)
+    face = faces[0]
+    emb = np.array(face.normed_embedding, dtype=np.float32)
+    emb = l2_normalize(emb)
+
+    # Return embedding as list
+    return {"embedding": emb.tolist()}
+
 @app.post("/enroll")
 def enroll(req: EnrollRequest):
     if face_app is None:

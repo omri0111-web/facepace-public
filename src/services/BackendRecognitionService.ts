@@ -128,6 +128,20 @@ class BackendRecognitionService {
     return true;
   }
 
+  async getEmbedding(imageEl: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement): Promise<number[]> {
+    const dataURL = await toDataURLFromElement(imageEl);
+    const res = await fetch(`${BASE_URL}/embedding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataURL })
+    });
+    if (!res.ok) {
+      throw new Error(`Embedding generation failed: ${res.status}`);
+    }
+    const json = await res.json();
+    return json.embedding || [];
+  }
+
   async scorePhotoQuality(dataURL: string): Promise<{ passed: boolean; reasons: string[]; metrics: any }> {
     const res = await fetch(`${BASE_URL}/photo/quality`, {
       method: 'POST',

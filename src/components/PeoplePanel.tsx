@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { AddPersonModal } from './AddPersonModal';
 import { backendRecognitionService } from '../services/BackendRecognitionService';
+import { supabaseDataService } from '../services/SupabaseDataService';
+import { useAuth } from '../hooks/useAuth';
 import { logger } from '../utils/logger';
 
 // Helper function to get person's photo URL
@@ -69,6 +71,7 @@ interface PeoplePanelProps {
 }
 
 export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGroups, onShowPersonDetails }: PeoplePanelProps) {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddPersonModal, setShowAddPersonModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -251,7 +254,7 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
     }
   };
 
-  const handleAddPerson = (personData: { 
+  const handleAddPerson = async (personData: { 
     id: string; // CRITICAL: This ID must match the enrollment ID!
     name: string; 
     email: string;
@@ -264,46 +267,73 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
     avatar?: string;
     photoPaths?: string[];
   }) => {
-    const newPerson: Person = {
-      id: personData.id, // USE THE PROVIDED ID (matches enrollment!)
-      name: personData.name,
-      email: personData.email,
-      ageGroup: personData.ageGroup,
-      age: personData.age,
-      parentName: personData.parentName,
-      parentPhone: personData.parentPhone,
-      allergies: personData.allergies,
-      guides: [], // Will be assigned later
-      status: 'unknown',
-      groups: [],
-      avatar: personData.avatar,
-      photoPaths: personData.photoPaths || [],
-    };
-    
-    logger.success('Person added to database', { id: personData.id, name: personData.name });
-    setPeople([newPerson, ...people]);
-    setShowAddPersonModal(false);
+    if (!user) {
+      logger.error('Cannot add person: user not authenticated');
+      return;
+    }
+
+    try {
+      // Create person in Supabase (note: photos are already uploaded and embeddings created by AddPersonModal)
+      const supabasePerson = await supabaseDataService.createPerson(user.id, {
+        id: personData.id, // Use the enrollment ID
+        name: personData.name,
+        email: personData.email,
+        age: personData.age,
+        age_group: personData.ageGroup,
+        parent_name: personData.parentName,
+        parent_phone: personData.parentPhone,
+        allergies: personData.allergies,
+        photo_paths: personData.photoPaths || [], // Include photo URLs
+      });
+
+      // Update local state
+      const newPerson: Person = {
+        id: supabasePerson.id,
+        name: supabasePerson.name,
+        email: supabasePerson.email || '',
+        ageGroup: supabasePerson.age_group || '',
+        age: supabasePerson.age || 0,
+        parentName: supabasePerson.parent_name || '',
+        parentPhone: supabasePerson.parent_phone || '',
+        allergies: supabasePerson.allergies || [],
+        guides: [],
+        status: 'unknown',
+        groups: [],
+        avatar: personData.avatar,
+        photoPaths: supabasePerson.photo_paths || [],
+      };
+
+      logger.success('Person saved to Supabase', { id: supabasePerson.id, name: supabasePerson.name });
+      setPeople([newPerson, ...people]);
+      setShowAddPersonModal(false);
+    } catch (error) {
+      logger.error('Failed to save person to Supabase', error);
+      console.error('Supabase save error:', error);
+    }
   };
 
   const handleRemovePerson = async (personId: string) => {
-    // Remove person from all groups
-    const updatedGroups = groups.map(group => ({
-      ...group,
-      members: group.members.filter(id => id !== personId),
-      memberCount: group.members.filter(id => id !== personId).length
-    }));
-    
-    // Remove person from people list
-    const updatedPeople = people.filter(p => p.id !== personId);
-    
-    setGroups(updatedGroups);
-    setPeople(updatedPeople);
-
-    // Persist to backend
     try {
-      await backendRecognitionService.deletePerson(personId);
+      // Delete from Supabase (this will CASCADE delete embeddings and group memberships)
+      await supabaseDataService.deletePerson(personId);
+      
+      // Remove person from all groups in local state
+      const updatedGroups = groups.map(group => ({
+        ...group,
+        members: group.members.filter(id => id !== personId),
+        memberCount: group.members.filter(id => id !== personId).length
+      }));
+      
+      // Remove person from people list
+      const updatedPeople = people.filter(p => p.id !== personId);
+      
+      setGroups(updatedGroups);
+      setPeople(updatedPeople);
+
+      logger.success('Person deleted from Supabase', { personId });
     } catch (error) {
-      logger.error('Failed to delete person from backend', error);
+      logger.error('Failed to delete person from Supabase', error);
+      console.error('Supabase delete error:', error);
     }
   };
 

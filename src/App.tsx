@@ -8,6 +8,10 @@ import { FaceRecognitionInitializer } from "./components/FaceRecognitionInitiali
 import { DebugPanel } from "./components/DebugPanel";
 import { CelebrationAnimation } from "./components/CelebrationAnimation";
 import { backendRecognitionService } from "./services/BackendRecognitionService";
+import { supabaseDataService } from "./services/SupabaseDataService";
+import { useAuth } from "./hooks/useAuth";
+import { LoginPage } from "./components/LoginPage";
+import { PublicEnrollmentPage } from "./components/PublicEnrollmentPage";
 import { VideoTestPage } from "./components/VideoTestPage";
 import { logger } from "./utils/logger";
 
@@ -1705,6 +1709,35 @@ function SimpleRecords({
 }
 
 export default function App() {
+  // Check if this is a public enrollment link (no auth required)
+  const pathname = window.location.pathname;
+  const enrollMatch = pathname.match(/\/enroll\/([a-zA-Z0-9]+)/);
+  
+  if (enrollMatch) {
+    const linkCode = enrollMatch[1];
+    return <PublicEnrollmentPage linkCode={linkCode} />;
+  }
+
+  // Authentication check
+  const { user, loading } = useAuth();
+
+  // Show loading spinner while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mx-auto"></div>
+          <p className="text-white mt-4 text-lg">Loading FacePace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!user) {
+    return <LoginPage />;
+  }
+
   // App navigation state
   const [currentScreen, setCurrentScreen] = useState<
     | "welcome"
@@ -1875,166 +1908,7 @@ export default function App() {
     }
   };
 
-  const [people, setPeople] = useState<Person[]>(() => {
-    // Try to load from localStorage first
-    const savedPeople = localStorage.getItem('scoutcheck-people');
-    if (savedPeople) {
-      try {
-        const parsed = JSON.parse(savedPeople);
-        console.log('📥 Loaded people from localStorage:', parsed.length, 'people');
-        // Convert date strings back to Date objects
-        return parsed.map((p: any) => ({
-          ...p,
-          lastSeen: p.lastSeen ? new Date(p.lastSeen) : undefined,
-        }));
-      } catch (error) {
-        console.error('Failed to load people from localStorage:', error);
-      }
-    }
-    
-    // Default initial data if localStorage is empty
-    console.log('📝 Using default initial data');
-    return [
-    {
-      id: "1",
-      name: "Alex M.",
-      email: "alex.m@scouts.org",
-      ageGroup: "6th Grade",
-      guides: ["Sarah J.", "Mike R."],
-      age: 11,
-      parentName: "Jennifer Martinez",
-      parentPhone: "(555) 123-4567",
-      allergies: ["Peanuts", "Tree nuts"],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 30),
-      status: "present",
-      groups: ["1", "2"],
-    },
-    {
-      id: "2",
-      name: "Emma K.",
-      email: "emma.k@scouts.org",
-      ageGroup: "7th Grade",
-      guides: ["Sarah J."],
-      age: 12,
-      parentName: "David Kim",
-      parentPhone: "(555) 234-5678",
-      allergies: [],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 60 * 2),
-      status: "absent",
-      groups: ["1"],
-    },
-    {
-      id: "3",
-      name: "Charlie B.",
-      email: "charlie.b@scouts.org",
-      ageGroup: "8th Grade",
-      guides: ["Tom W."],
-      age: 13,
-      parentName: "Lisa Brown",
-      parentPhone: "(555) 345-6789",
-      allergies: ["Dairy"],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 10),
-      status: "present",
-      groups: ["3", "1"],
-    },
-    {
-      id: "4",
-      name: "Sophie L.",
-      email: "sophie.l@scouts.org",
-      ageGroup: "6th Grade",
-      guides: ["Sarah J.", "Mike R."],
-      age: 11,
-      parentName: "Amanda Lopez",
-      parentPhone: "(555) 456-7890",
-      allergies: ["Shellfish"],
-      status: "unknown",
-      groups: ["2", "1"],
-    },
-    {
-      id: "5",
-      name: "Jake W.",
-      email: "jake.w@scouts.org",
-      ageGroup: "9th Grade",
-      guides: ["Chris D.", "Sarah J."],
-      age: 14,
-      parentName: "Robert Wilson",
-      parentPhone: "(555) 567-8901",
-      allergies: ["Bee stings"],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 60 * 4),
-      status: "absent",
-      groups: ["1", "4"], // Now in Eagle Patrol and Outdoor Explorers
-    },
-    {
-      id: "6",
-      name: "Maya P.",
-      email: "maya.p@scouts.org",
-      ageGroup: "7th Grade",
-      guides: ["Sarah J.", "Tom W."],
-      age: 12,
-      parentName: "Priya Patel",
-      parentPhone: "(555) 678-9012",
-      allergies: ["Gluten"],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 15),
-      status: "present",
-      groups: ["1", "2"],
-    },
-    {
-      id: "7",
-      name: "Noah T.",
-      email: "noah.t@scouts.org",
-      ageGroup: "8th Grade",
-      guides: ["Mike R."],
-      age: 13,
-      parentName: "Karen Taylor",
-      parentPhone: "(555) 789-0123",
-      allergies: [],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 45),
-      status: "present",
-      groups: ["1"],
-    },
-    {
-      id: "8",
-      name: "Zoe R.",
-      email: "zoe.r@scouts.org",
-      ageGroup: "6th Grade",
-      guides: ["Tom W."],
-      age: 11,
-      parentName: "Michelle Rodriguez",
-      parentPhone: "(555) 890-1234",
-      allergies: ["Eggs", "Soy"],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 20),
-      status: "present",
-      groups: ["2", "3"],
-    },
-    {
-      id: "9",
-      name: "Ethan C.",
-      email: "ethan.c@scouts.org",
-      ageGroup: "7th Grade",
-      guides: ["Chris D."],
-      age: 12,
-      parentName: "Steven Chen",
-      parentPhone: "(555) 901-2345",
-      allergies: ["Latex"],
-      status: "unknown",
-      groups: ["2"],
-    },
-    {
-      id: "10",
-      name: "Lily S.",
-      email: "lily.s@scouts.org",
-      ageGroup: "9th Grade",
-      guides: ["Chris D.", "Mike R."],
-      age: 14,
-      parentName: "Rachel Smith",
-      parentPhone: "(555) 012-3456",
-      allergies: ["Penicillin"],
-      lastSeen: new Date(Date.now() - 1000 * 60 * 30),
-      status: "present",
-      groups: ["4", "1"],
-    },
-  ];
-  });
+  const [people, setPeople] = useState<Person[]>([]);
 
   const [groups, setGroups] = useState<Group[]>([
     {
@@ -2100,101 +1974,68 @@ export default function App() {
     },
   ]);
 
-  // Initialize backend face recognition service on app load
+  // Initialize services and load data from Supabase on app load
   useEffect(() => {
+    if (!user) return; // Don't load data if user is not authenticated
+
     logger.clear(); // Clear console and show app banner
     
-    const initFaceRecognition = async () => {
+    const initServices = async () => {
       try {
+        // Initialize backend face recognition service
         logger.system('Initializing InsightFace backend...');
         await backendRecognitionService.initialize();
         logger.success('InsightFace backend ready!');
 
-        // Load persisted people from backend DB and merge minimal fields into UI list without losing UI-only fields
-        const apiPeople = await backendRecognitionService.fetchPeople();
-        if (Array.isArray(apiPeople)) {
-          setPeople((prev) => {
-            // Build a map for quick lookup
-            const byId = new Map(prev.map(p => [p.id, p] as const));
-            const merged = [...prev];
-            for (const p of apiPeople) {
-              if (!byId.has(p.person_id)) {
-                merged.push({
-                  id: p.person_id,
-                  name: p.person_name,
-                  email: `${(p.person_name || 'user').toLowerCase().replace(/\s+/g, '.') }@scouts.org`,
-                  ageGroup: '6th Grade',
-                  guides: [],
-                  age: 11,
-                  parentName: '',
-                  parentPhone: '',
-                  allergies: [],
-                  status: 'unknown',
-                  groups: [],
-                  photoPaths: (p as any).photo_paths || [],
-                });
-              }
-            }
-            return merged;
-          });
-        }
+        // Load people from Supabase
+        logger.system('Loading people from Supabase...');
+        const supabasePeople = await supabaseDataService.fetchPeople(user.id);
+        
+        const loadedPeople: Person[] = supabasePeople.map(p => ({
+          id: p.id,
+          name: p.name,
+          email: p.email || `${p.name.toLowerCase().replace(/\s+/g, '.')}@scouts.org`,
+          ageGroup: p.age_group || '6th Grade',
+          age: p.age || 11,
+          parentName: p.parent_name || '',
+          parentPhone: p.parent_phone || '',
+          allergies: p.allergies || [],
+          guides: [],
+          status: 'unknown',
+          groups: [],
+          photoPaths: p.photo_paths || [],
+        }));
 
-        // Load groups and hydrate membership from backend
-        const apiGroups = await backendRecognitionService.fetchGroups();
-        if (Array.isArray(apiGroups) && apiGroups.length > 0) {
-          setGroups((prev) => {
-            const byId = new Map(prev.map(g => [g.id, g] as const));
-            const merged = [...prev];
-            for (const g of apiGroups) {
-              // Parse guidesInfo JSON string into guides array
-              let guides: Guide[] | undefined;
-              if (g.guides_info) {
-                try {
-                  guides = JSON.parse(g.guides_info);
-                } catch {
-                  guides = undefined;
-                }
-              }
+        setPeople(loadedPeople);
+        logger.success(`Loaded ${loadedPeople.length} people from Supabase`);
 
-              if (byId.has(g.group_id)) {
-                const idx = merged.findIndex(x => x.id === g.group_id);
-                if (idx >= 0) {
-                  merged[idx] = {
-                    ...merged[idx],
-                    members: g.members || [],
-                    memberCount: (g.members || []).length,
-                    age: g.age,
-                    guides,
-                    guidesInfo: g.guides_info,
-                    notes: g.notes,
-                  };
-                }
-              } else {
-                merged.push({
-                  id: g.group_id,
-                  name: g.group_name,
-                  description: '',
-                  memberCount: (g.members || []).length,
-                  capacity: 30,
-                  isActive: true,
-                  members: g.members || [],
-                  age: g.age,
-                  guides,
-                  guidesInfo: g.guides_info,
-                  notes: g.notes,
-                });
-              }
-            }
-            return merged;
-          });
-        }
+        // Load groups from Supabase
+        logger.system('Loading groups from Supabase...');
+        const supabaseGroups = await supabaseDataService.fetchGroups(user.id);
+        
+        const loadedGroups: Group[] = supabaseGroups.map(g => ({
+          id: g.id,
+          name: g.name,
+          description: g.description || '',
+          memberCount: 0, // Will be updated when we load group members
+          capacity: 30,
+          isActive: true,
+          members: [],
+          guides: g.guides_info,
+          notes: g.notes,
+        }));
+
+        setGroups(loadedGroups);
+        logger.success(`Loaded ${loadedGroups.length} groups from Supabase`);
+
       } catch (error) {
-        logger.error('Failed to initialize face recognition', error);
+        logger.error('Failed to initialize services or load data', error);
+        console.error('Initialization error:', error);
       }
     };
 
-    initFaceRecognition();
-  }, []); // Run only once on mount
+    initServices();
+  }, [user]); // Re-run when user changes
 
   const handleFaceCountChange = (
     detected: number,

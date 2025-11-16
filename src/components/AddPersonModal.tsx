@@ -6,6 +6,8 @@ import { Label } from './ui/label';
 import { Progress } from './ui/progress';
 import { Card } from './ui/card';
 import { backendRecognitionService } from '../services/BackendRecognitionService';
+import { supabaseDataService } from '../services/SupabaseDataService';
+import { useAuth } from '../hooks/useAuth';
 
 interface AddPersonModalProps {
   isOpen: boolean;
@@ -25,6 +27,7 @@ interface AddPersonModalProps {
 }
 
 export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalProps) {
+  const { user } = useAuth();
   const [step, setStep] = useState<'info' | 'face-scan' | 'capturing' | 'complete'>('info');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -346,52 +349,77 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
 
       console.log(`🆔 Enrolling with ID: ${personId} for ${name}`);
 
-      // Ensure person exists in backend DB
-      await backendRecognitionService.createPerson(personId, name);
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
 
-      // Upload only accepted photos to backend storage
-      console.log(`📤 Uploading ${passingPhotos.length} accepted photos to backend storage...`);
-      const uploadedPhotoPaths: string[] = [];
-      for (const photo of passingPhotos) {
+      // Upload photos to Supabase Storage
+      console.log(`📤 Uploading ${passingPhotos.length} photos to Supabase Storage...`);
+      const uploadedPhotoUrls: string[] = [];
+      for (let i = 0; i < passingPhotos.length; i++) {
         try {
-          const result = await backendRecognitionService.uploadPersonPhoto(personId, photo.dataURL);
-          uploadedPhotoPaths.push(result.filename);
+          // Convert base64 to blob
+          const response = await fetch(passingPhotos[i].dataURL);
+          const blob = await response.blob();
+          
+          // Upload to Supabase
+          const photoUrl = await supabaseDataService.uploadPersonPhoto(
+            user.id,
+            personId,
+            blob,
+            `photo_${i}_${Date.now()}.jpg`
+          );
+          uploadedPhotoUrls.push(photoUrl);
+          console.log(`✅ Uploaded photo ${i + 1}/${passingPhotos.length} to Supabase`);
         } catch (error) {
-          console.error('Failed to upload photo:', error);
+          console.error('Failed to upload photo to Supabase:', error);
         }
       }
-      console.log(`✅ Uploaded ${uploadedPhotoPaths.length} photos`);
-      setEnrolledPhotoPaths(uploadedPhotoPaths);
+      console.log(`✅ Uploaded ${uploadedPhotoUrls.length} photos to Supabase`);
+      setEnrolledPhotoPaths(uploadedPhotoUrls);
 
       // Enroll accepted images to build multiple embeddings for the same person_id
       let numSuccessful = 0;
       const failureReasons: string[] = [];
+      const embeddingsToSave: number[][] = [];
       
       for (let i = 0; i < passingPhotos.length; i++) {
         try {
-          const ok = await backendRecognitionService.enrollFace(
-            personId,
-            name,
-            imgElements[i]
-          );
-          if (ok) numSuccessful++;
+          // Get embedding from backend
+          const embedding = await backendRecognitionService.getEmbedding(imgElements[i]);
+          if (embedding && embedding.length > 0) {
+            embeddingsToSave.push(embedding);
+            numSuccessful++;
+            console.log(`✅ Photo ${i + 1}/${passingPhotos.length} processed successfully`);
+          }
           setEnrollmentProgress(50 + ((i + 1) / passingPhotos.length) * 50);
-          console.log(`✅ Photo ${i + 1}/${passingPhotos.length} enrolled successfully`);
         } catch (enrollError: any) {
-          console.error(`❌ Photo ${i + 1} enrollment failed:`, enrollError.message);
+          console.error(`❌ Photo ${i + 1} processing failed:`, enrollError.message);
           failureReasons.push(`Photo ${i + 1}: ${enrollError.message}`);
           // Continue with other photos instead of failing completely
         }
       }
 
       if (numSuccessful === 0) {
-        const errorMsg = `All ${passingPhotos.length} photos were rejected by backend:\n${failureReasons.join('\n')}`;
+        const errorMsg = `All ${passingPhotos.length} photos were rejected:\n${failureReasons.join('\n')}`;
         throw new Error(errorMsg);
       }
       
       if (numSuccessful < passingPhotos.length) {
-        console.warn(`⚠️ Only ${numSuccessful}/${passingPhotos.length} photos were enrolled successfully`);
+        console.warn(`⚠️ Only ${numSuccessful}/${passingPhotos.length} photos were processed successfully`);
       }
+
+      // Save all embeddings to Supabase
+      console.log(`💾 Saving ${embeddingsToSave.length} embeddings to Supabase...`);
+      for (let i = 0; i < embeddingsToSave.length; i++) {
+        try {
+          const photoUrl = uploadedPhotoUrls[i] || '';
+          await supabaseDataService.storeFaceEmbedding(personId, embeddingsToSave[i], photoUrl);
+        } catch (error) {
+          console.error('Failed to save embedding to Supabase:', error);
+        }
+      }
+      console.log(`✅ Saved ${embeddingsToSave.length} embeddings to Supabase`);
 
       setEnrollmentProgress(100);
       
