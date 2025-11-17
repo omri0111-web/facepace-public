@@ -551,6 +551,27 @@ class BackendRecognitionService {
     if (!id) return null;
     return `${BASE_URL}/test-report/download/${id}`;
   }
+
+  async processPendingEnrollment(pendingId: string): Promise<{
+    person_id: string
+    name: string
+    embeddings_count: number
+    photos_uploaded: number
+    photo_urls: string[]
+  }> {
+    const res = await fetch(`${BASE_URL}/process_pending_enrollment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pending_id: pendingId })
+    });
+    
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.detail || `Failed to process pending enrollment: ${res.status}`);
+    }
+    
+    return await res.json();
+  }
 }
 
 export const backendRecognitionService = new BackendRecognitionService();

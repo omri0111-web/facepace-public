@@ -328,6 +328,38 @@ class SupabaseDataService {
   // ============================================================================
 
   /**
+   * Fetch group members for multiple groups at once
+   */
+  async fetchAllGroupMembers(groupIds: string[]): Promise<Record<string, string[]>> {
+    if (groupIds.length === 0) return {};
+
+    const { data, error } = await supabase
+      .from('group_members')
+      .select('group_id, person_id')
+      .in('group_id', groupIds)
+    
+    if (error) {
+      console.error('Error fetching group members:', error)
+      throw error
+    }
+    
+    // Organize members by group_id
+    const membersByGroup: Record<string, string[]> = {}
+    groupIds.forEach(id => {
+      membersByGroup[id] = []
+    })
+    
+    data?.forEach(row => {
+      if (!membersByGroup[row.group_id]) {
+        membersByGroup[row.group_id] = []
+      }
+      membersByGroup[row.group_id].push(row.person_id)
+    })
+    
+    return membersByGroup
+  }
+
+  /**
    * Get all members of a group
    */
   async getGroupMembers(groupId: string): Promise<string[]> {
@@ -356,10 +388,17 @@ class SupabaseDataService {
       })
     
     if (error) {
-      // Ignore duplicate key error (already a member)
-      if (!error.message.includes('duplicate')) {
+      // Ignore duplicate key error (already a member) - 409 Conflict or duplicate key message
+      const isDuplicate = error.message.includes('duplicate') || 
+                          error.message.includes('already exists') ||
+                          error.code === '23505' || // Postgres unique violation
+                          error.message.includes('unique constraint');
+      
+      if (!isDuplicate) {
         console.error('Error adding group member:', error)
         throw error
+      } else {
+        console.log(`Person ${personId} is already in group ${groupId}, skipping...`)
       }
     }
   }
@@ -596,13 +635,181 @@ class SupabaseDataService {
    * Delete an enrollment link
    */
   async deleteEnrollmentLink(linkId: string): Promise<void> {
-    const { error } = await supabase
+    const { error} = await supabase
       .from('enrollment_links')
       .delete()
       .eq('id', linkId)
     
     if (error) {
       console.error('Error deleting enrollment link:', error)
+      throw error
+    }
+  }
+
+  // ============================================================================
+  // PENDING ENROLLMENTS OPERATIONS
+  // ============================================================================
+
+  /**
+   * Upload a photo to the pending folder in Supabase Storage
+   */
+  async uploadPendingPhoto(
+    pendingId: string,
+    photoBlob: Blob,
+    filename: string
+  ): Promise<string> {
+    const filePath = `pending/${pendingId}/${filename}`
+    
+    const { error: uploadError } = await supabase.storage
+      .from('face-photos')
+      .upload(filePath, photoBlob, {
+        contentType: 'image/jpeg',
+        upsert: true
+      })
+    
+    if (uploadError) {
+      console.error('Error uploading pending photo:', uploadError)
+      throw uploadError
+    }
+    
+    // Get public URL
+    const { data } = supabase.storage
+      .from('face-photos')
+      .getPublicUrl(filePath)
+    
+    return data.publicUrl
+  }
+
+  /**
+   * Create a pending enrollment (before face recognition processing)
+   */
+  async createPendingEnrollment(data: {
+    id: string
+    user_id: string
+    group_id?: string
+    name: string
+    email?: string
+    age?: number
+    age_group?: string
+    parent_name?: string
+    parent_phone?: string
+    allergies?: string[]
+    photo_urls: string[]
+    status: 'pending' | 'approved' | 'rejected'
+  }): Promise<void> {
+    const { error } = await supabase
+      .from('pending_enrollments')
+      .insert({
+        id: data.id,
+        user_id: data.user_id,
+        group_id: data.group_id || null,
+        name: data.name,
+        email: data.email || null,
+        age: data.age || null,
+        age_group: data.age_group || null,
+        parent_name: data.parent_name || null,
+        parent_phone: data.parent_phone || null,
+        allergies: data.allergies || [],
+        photo_urls: data.photo_urls,
+        status: data.status
+      })
+    
+    if (error) {
+      console.error('Error creating pending enrollment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Fetch all pending enrollments for a user
+   */
+  async fetchPendingEnrollments(userId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('pending_enrollments')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    
+    if (error) {
+      console.error('Error fetching pending enrollments:', error)
+      throw error
+    }
+    
+    // Convert photo URLs to signed URLs (pending photos need authentication)
+    const enrichedData = await Promise.all((data || []).map(async (enrollment) => {
+      if (enrollment.photo_urls && enrollment.photo_urls.length > 0) {
+        const signedUrls = await Promise.all(
+          enrollment.photo_urls.map(async (url: string) => {
+            // Extract the path from the URL
+            const path = url.split('/face-photos/')[1]
+            if (path) {
+              try {
+                // Create a signed URL that expires in 1 hour
+                const { data: signedData } = await supabase.storage
+                  .from('face-photos')
+                  .createSignedUrl(path, 3600)
+                
+                return signedData?.signedUrl || url
+              } catch (err) {
+                console.warn('Failed to create signed URL for:', path, err)
+                return url
+              }
+            }
+            return url
+          })
+        )
+        
+        return {
+          ...enrollment,
+          photo_urls: signedUrls
+        }
+      }
+      return enrollment
+    }))
+    
+    return enrichedData
+  }
+
+  /**
+   * Update pending enrollment status
+   */
+  async updatePendingEnrollmentStatus(
+    pendingId: string,
+    status: 'approved' | 'rejected'
+  ): Promise<void> {
+    const { error } = await supabase
+      .from('pending_enrollments')
+      .update({ status, processed_at: new Date().toISOString() })
+      .eq('id', pendingId)
+    
+    if (error) {
+      console.error('Error updating pending enrollment status:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Delete a pending enrollment and its photos
+   */
+  async deletePendingEnrollment(pendingId: string): Promise<void> {
+    // Delete photos from storage
+    const { error: storageError } = await supabase.storage
+      .from('face-photos')
+      .remove([`pending/${pendingId}`])
+    
+    if (storageError) {
+      console.warn('Error deleting pending photos:', storageError)
+    }
+    
+    // Delete from database
+    const { error } = await supabase
+      .from('pending_enrollments')
+      .delete()
+      .eq('id', pendingId)
+    
+    if (error) {
+      console.error('Error deleting pending enrollment:', error)
       throw error
     }
   }

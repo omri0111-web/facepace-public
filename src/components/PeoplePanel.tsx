@@ -15,7 +15,8 @@ import { logger } from '../utils/logger';
 // Helper function to get person's photo URL
 const getPersonPhotoUrl = (person: Person): string => {
   if (person.photoPaths && person.photoPaths.length > 0) {
-    return backendRecognitionService.getPersonPhotoUrl(person.id, person.photoPaths[0]);
+    // Photos are now stored in Supabase, photoPaths contains full URLs
+    return person.photoPaths[0];
   }
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${person.name}`;
 };
@@ -137,7 +138,8 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
       const loadMetrics = async () => {
         for (const photoPath of photosNeedingMetrics) {
           try {
-            const photoUrl = backendRecognitionService.getPersonPhotoUrl(editingPhotos!.id, photoPath);
+            // Photos are in Supabase, photoPath is already a full URL
+            const photoUrl = photoPath;
             
             // Create an image element and load the URL
             const img = new Image();
@@ -273,20 +275,19 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
     }
 
     try {
-      // Create person in Supabase (note: photos are already uploaded and embeddings created by AddPersonModal)
-      const supabasePerson = await supabaseDataService.createPerson(user.id, {
-        id: personData.id, // Use the enrollment ID
-        name: personData.name,
-        email: personData.email,
-        age: personData.age,
-        age_group: personData.ageGroup,
-        parent_name: personData.parentName,
-        parent_phone: personData.parentPhone,
-        allergies: personData.allergies,
-        photo_paths: personData.photoPaths || [], // Include photo URLs
-      });
+      // NOTE: Backend already saved person to Supabase via /enroll_person_direct
+      // We just need to fetch the complete data and add to local state
+      
+      logger.system('Fetching person from Supabase (already saved by backend)...');
 
-      // Update local state
+      // Fetch the person from Supabase to get the complete data (including photo URLs)
+      const supabasePerson = await supabaseDataService.getPerson(personData.id);
+      
+      if (!supabasePerson) {
+        throw new Error('Person not found in Supabase after enrollment');
+      }
+
+      // Update local state with complete data from Supabase
       const newPerson: Person = {
         id: supabasePerson.id,
         name: supabasePerson.name,
@@ -303,12 +304,12 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
         photoPaths: supabasePerson.photo_paths || [],
       };
 
-      logger.success('Person saved to Supabase', { id: supabasePerson.id, name: supabasePerson.name });
+      logger.success('Person added to UI', { id: supabasePerson.id, name: supabasePerson.name });
       setPeople([newPerson, ...people]);
       setShowAddPersonModal(false);
     } catch (error) {
-      logger.error('Failed to save person to Supabase', error);
-      console.error('Supabase save error:', error);
+      logger.error('Failed to add person to UI', error);
+      console.error('Error adding person:', error);
     }
   };
 
@@ -710,7 +711,13 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
         <Button 
           className="w-full h-12 text-base" 
           variant="outline"
-          onClick={() => setShowAddPersonModal(true)}
+          onClick={() => {
+            if (!navigator.onLine) {
+              alert('📵 You need an internet connection to add new people. Please connect and try again.');
+              return;
+            }
+            setShowAddPersonModal(true);
+          }}
         >
           📷 Add New Person (Camera)
         </Button>

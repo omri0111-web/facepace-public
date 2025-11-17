@@ -14,6 +14,14 @@ from fastapi.responses import FileResponse
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from PIL import Image
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
+# Load environment variables from .env file in backend directory
+import pathlib
+backend_dir = pathlib.Path(__file__).parent
+env_path = backend_dir / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # ---------------- Photo quality helpers ----------------
 def _to_grayscale(arr: np.ndarray) -> np.ndarray:
@@ -125,6 +133,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize Supabase client with service role key (bypasses RLS)
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+logger.info(f"Loading Supabase config - URL: {SUPABASE_URL[:30] if SUPABASE_URL else 'None'}, Key: {'Set' if SUPABASE_SERVICE_KEY else 'None'}")
+
+supabase: Optional[Client] = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    try:
+        # Create Supabase client without proxy parameter (compatibility fix)
+        supabase = create_client(
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_SERVICE_KEY
+        )
+        logger.info(f"✅ Supabase client initialized: {SUPABASE_URL}")
+    except Exception as e:
+        logger.error(f"⚠️  Failed to initialize Supabase: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+else:
+    logger.warning("⚠️  Supabase credentials not found in environment variables")
 
 face_app: Optional[FaceAnalysis] = None
 # -----------------------
@@ -443,25 +477,38 @@ def detect(req: DetectRequest):
 
 @app.post("/photo/quality")
 def photo_quality(req: DetectRequest):
-    if face_app is None:
-        raise HTTPException(status_code=400, detail="Service not initialized")
-    img_pil = decode_image_b64(req.image)
-    img = pil_to_ndarray(img_pil)
-    faces = face_app.get(img)
-    if not faces:
-        return {"faces": [], "message": "No face detected", "passed": False}
-    # Score largest face
-    faces.sort(key=lambda f: float((f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1])), reverse=True)
-    f = faces[0]
-    x1, y1, x2, y2 = map(float, f.bbox)
-    kps = getattr(f, 'kps', None)
-    metrics = _compute_quality_metrics(img_pil, (x1,y1,x2,y2), kps)
-    passed, reasons = _quality_pass(metrics)
-    return {
-        "metrics": metrics,
-        "passed": passed,
-        "reasons": reasons
-    }
+    try:
+        if face_app is None:
+            raise HTTPException(status_code=400, detail="Service not initialized")
+        
+        logger.info("📸 Quality check requested")
+        img_pil = decode_image_b64(req.image)
+        img = pil_to_ndarray(img_pil)
+        faces = face_app.get(img)
+        
+        if not faces:
+            logger.warning("⚠️  No face detected in quality check")
+            return {"faces": [], "message": "No face detected", "passed": False}
+        
+        # Score largest face
+        faces.sort(key=lambda f: float((f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1])), reverse=True)
+        f = faces[0]
+        x1, y1, x2, y2 = map(float, f.bbox)
+        kps = getattr(f, 'kps', None)
+        metrics = _compute_quality_metrics(img_pil, (x1,y1,x2,y2), kps)
+        passed, reasons = _quality_pass(metrics)
+        
+        logger.info(f"✅ Quality check complete: passed={passed}")
+        return {
+            "metrics": metrics,
+            "passed": passed,
+            "reasons": reasons
+        }
+    except Exception as e:
+        logger.error(f"❌ Error in quality check: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/embedding")
 def get_embedding(req: DetectRequest):
@@ -1254,6 +1301,443 @@ def test_report_download(report_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create zip: {e}")
     return FileResponse(zip_path, media_type='application/zip', filename=f"{report_id}.zip")
+
+
+# ============================================================================
+# NEW ENDPOINTS FOR HYBRID ARCHITECTURE
+# ============================================================================
+
+class ProcessPendingRequest(BaseModel):
+    pending_id: str
+
+class SyncGroupRequest(BaseModel):
+    user_id: str
+    group_id: str
+
+class EnrollPersonDirectRequest(BaseModel):
+    user_id: str
+    person_id: str
+    name: str
+    email: Optional[str] = None
+    age: Optional[int] = None
+    age_group: Optional[str] = None
+    parent_name: Optional[str] = None
+    parent_phone: Optional[str] = None
+    allergies: Optional[List[str]] = None
+    photos: List[str]  # Base64 encoded images
+
+
+@app.post("/enroll_person_direct")
+def enroll_person_direct(req: EnrollPersonDirectRequest):
+    """
+    Direct enrollment from app - backend handles everything
+    
+    Flow:
+    1. Receive photos (base64) + person details from frontend
+    2. Generate face embeddings using InsightFace
+    3. Upload photos to Supabase Storage: {user_id}/{person_id}/
+    4. Create person in Supabase `persons` table
+    5. Save embeddings to Supabase `face_embeddings` table
+    6. Save to local cache (SQLite)
+    7. Return success
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not initialized")
+    if not face_app:
+        raise HTTPException(status_code=500, detail="Face recognition not initialized")
+    
+    try:
+        logger.info(f"📥 Direct enrollment started: {req.name} (ID: {req.person_id})")
+        
+        if len(req.photos) < 4:
+            raise HTTPException(status_code=400, detail="At least 4 photos required")
+        
+        embeddings = []
+        photo_urls = []
+        
+        # Process each photo
+        for idx, photo_base64 in enumerate(req.photos[:4]):  # Limit to 4 photos
+            logger.info(f"📸 Processing photo {idx + 1}/4 for {req.name}")
+            
+            # 1. Decode base64 image
+            if ',' in photo_base64:
+                photo_base64 = photo_base64.split(',')[1]  # Remove data URL prefix
+            
+            img_bytes = base64.b64decode(photo_base64)
+            img = Image.open(io.BytesIO(img_bytes))
+            
+            # 2. Generate embedding
+            img_array = np.array(img)
+            faces = face_app.get(img_array)
+            
+            if not faces:
+                logger.warning(f"⚠️  No face detected in photo {idx + 1}")
+                continue
+            
+            # Get largest face
+            faces.sort(key=lambda f: float((f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])), reverse=True)
+            face = faces[0]
+            embedding = np.array(face.normed_embedding, dtype=np.float32)
+            
+            # Normalize embedding
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+            
+            embeddings.append(embedding.tolist())
+            logger.info(f"✅ Generated embedding for photo {idx + 1}")
+            
+            # 3. Upload photo to Supabase Storage: {user_id}/{person_id}/
+            photo_path = f"{req.user_id}/{req.person_id}/photo_{idx + 1}.jpg"
+            
+            # Convert image to JPEG bytes
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='JPEG', quality=95)
+            img_byte_arr.seek(0)
+            
+            try:
+                supabase.storage.from_('face-photos').upload(
+                    photo_path,
+                    img_byte_arr.getvalue(),
+                    {'content-type': 'image/jpeg'}
+                )
+                logger.info(f"☁️  Uploaded photo {idx + 1} to Supabase Storage")
+            except Exception as e:
+                # If upload fails due to existing file, try updating
+                if 'already exists' in str(e).lower():
+                    supabase.storage.from_('face-photos').update(
+                        photo_path,
+                        img_byte_arr.getvalue(),
+                        {'content-type': 'image/jpeg'}
+                    )
+                    logger.info(f"☁️  Updated existing photo {idx + 1} in Supabase Storage")
+                else:
+                    raise
+            
+            photo_url = supabase.storage.from_('face-photos').get_public_url(photo_path)
+            photo_urls.append(photo_url)
+        
+        if not embeddings:
+            raise HTTPException(status_code=400, detail="No valid face embeddings could be generated")
+        
+        logger.info(f"✅ Generated {len(embeddings)} embeddings for {req.name}")
+        
+        # 4. Create person in Supabase
+        person_data = {
+            'id': req.person_id,
+            'user_id': req.user_id,
+            'name': req.name,
+            'email': req.email,
+            'age': req.age,
+            'age_group': req.age_group,
+            'parent_name': req.parent_name,
+            'parent_phone': req.parent_phone,
+            'allergies': req.allergies or [],
+            'photo_paths': photo_urls
+        }
+        
+        try:
+            supabase.table('persons').insert(person_data).execute()
+            logger.info(f"💾 Person created in Supabase: {req.name} (ID: {req.person_id})")
+        except Exception as e:
+            if 'duplicate' in str(e).lower() or 'already exists' in str(e).lower():
+                # Update if already exists
+                supabase.table('persons').update(person_data).eq('id', req.person_id).execute()
+                logger.info(f"💾 Person updated in Supabase: {req.name} (ID: {req.person_id})")
+            else:
+                raise
+        
+        # 5. Save embeddings to Supabase
+        for idx, embedding in enumerate(embeddings):
+            embedding_data = {
+                'person_id': req.person_id,
+                'embedding': embedding,
+                'photo_url': photo_urls[idx] if idx < len(photo_urls) else None,
+                'quality_score': 1.0
+            }
+            supabase.table('face_embeddings').insert(embedding_data).execute()
+        
+        logger.info(f"☁️  Saved {len(embeddings)} embeddings to Supabase")
+        
+        # 6. Save to local cache (SQLite)
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        # Clear existing embeddings for this person (if re-enrolling)
+        c.execute("DELETE FROM embeddings WHERE person_id = ?", (req.person_id,))
+        
+        for embedding in embeddings:
+            emb_blob = np.array(embedding, dtype=np.float32).tobytes()
+            c.execute(
+                "INSERT INTO embeddings (person_id, embedding) VALUES (?, ?)",
+                (req.person_id, emb_blob)
+            )
+        
+        conn.commit()
+        conn.close()
+        logger.info(f"💽 Saved {len(embeddings)} embeddings to local cache")
+        
+        logger.info(f"🎉 Direct enrollment complete: {req.name}")
+        
+        return {
+            "success": True,
+            "person_id": req.person_id,
+            "name": req.name,
+            "embeddings_count": len(embeddings),
+            "photos_uploaded": len(photo_urls),
+            "message": f"✅ {req.name} enrolled successfully!"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error in direct enrollment: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/process_pending_enrollment")
+def process_pending_enrollment(req: ProcessPendingRequest):
+    """
+    Process a pending enrollment: generate embeddings, move photos, save to Supabase
+    
+    Flow:
+    1. Get pending enrollment from Supabase
+    2. Download photos from pending/{pending_id}/
+    3. Generate face embeddings
+    4. Upload photos to {user_id}/{person_id}/
+    5. Create person in Supabase
+    6. Save embeddings to Supabase
+    7. Save to local cache
+    8. Update pending status to 'accepted'
+    9. Delete old pending photos
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not initialized")
+    if not face_app:
+        raise HTTPException(status_code=500, detail="Face recognition not initialized")
+    
+    try:
+        # 1. Get pending enrollment from Supabase
+        response = supabase.table('pending_enrollments').select('*').eq('id', req.pending_id).single().execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Pending enrollment not found")
+        
+        pending = response.data
+        user_id = pending['user_id']
+        person_id = str(uuid.uuid4())  # Generate new person ID
+        
+        print(f"📥 Processing pending enrollment: {pending['name']} (ID: {req.pending_id})")
+        print(f"📥 Group ID from pending enrollment: {pending.get('group_id')}")
+        
+        # 2. Download photos from Supabase Storage (pending folder)
+        photo_urls = pending.get('photo_urls', [])
+        if len(photo_urls) < 4:
+            raise HTTPException(status_code=400, detail="Not enough photos in pending enrollment")
+        
+        embeddings = []
+        final_photo_urls = []
+        
+        for idx, photo_url in enumerate(photo_urls[:4]):  # Process up to 4 photos
+            # Extract bucket path from URL
+            # URL format: https://.../storage/v1/object/public/face-photos/pending/{id}/photo.jpg
+            bucket_path = photo_url.split('/face-photos/')[-1] if '/face-photos/' in photo_url else None
+            
+            if not bucket_path:
+                print(f"⚠️  Skipping invalid photo URL: {photo_url}")
+                continue
+            
+            # 3. Download photo from storage
+            photo_data = supabase.storage.from_('face-photos').download(bucket_path)
+            img = Image.open(io.BytesIO(photo_data))
+            
+            # 4. Generate embedding
+            img_array = np.array(img)
+            faces = face_app.get(img_array)
+            
+            if not faces:
+                print(f"⚠️  No face detected in photo {idx + 1}")
+                continue
+            
+            # Get largest face
+            faces.sort(key=lambda f: float((f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])), reverse=True)
+            face = faces[0]
+            embedding = np.array(face.normed_embedding, dtype=np.float32)
+            
+            # Normalize embedding
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+            
+            embeddings.append(embedding.tolist())
+            
+            # 5. Upload photo to final location: {user_id}/{person_id}/
+            final_path = f"{user_id}/{person_id}/photo_{idx + 1}.jpg"
+            
+            # Convert image back to bytes
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='JPEG')
+            img_byte_arr.seek(0)
+            
+            supabase.storage.from_('face-photos').upload(
+                final_path,
+                img_byte_arr.getvalue(),
+                {'content-type': 'image/jpeg'}
+            )
+            
+            final_photo_url = supabase.storage.from_('face-photos').get_public_url(final_path)
+            final_photo_urls.append(final_photo_url)
+            
+            print(f"✅ Processed photo {idx + 1}/4 - embedding generated, photo uploaded")
+        
+        if not embeddings:
+            raise HTTPException(status_code=400, detail="No valid face embeddings could be generated")
+        
+        # 6. Create person in Supabase
+        person_data = {
+            'id': person_id,
+            'user_id': user_id,
+            'name': pending['name'],
+            'email': pending.get('email'),
+            'age': pending.get('age'),
+            'age_group': pending.get('age_group'),
+            'parent_name': pending.get('parent_name'),
+            'parent_phone': pending.get('parent_phone'),
+            'allergies': pending.get('allergies', []),
+            'photo_paths': final_photo_urls
+        }
+        
+        supabase.table('persons').insert(person_data).execute()
+        print(f"✅ Person created in Supabase: {pending['name']} (ID: {person_id})")
+        
+        # 6.5. Add person to group if group_id is specified
+        group_id = pending.get('group_id')
+        if group_id:
+            try:
+                supabase.table('group_members').insert({
+                    'group_id': group_id,
+                    'person_id': person_id
+                }).execute()
+                print(f"✅ Added {pending['name']} to group {group_id}")
+            except Exception as e:
+                print(f"⚠️  Failed to add person to group: {e}")
+        
+        # 7. Save embeddings to Supabase
+        for idx, embedding in enumerate(embeddings):
+            embedding_data = {
+                'person_id': person_id,
+                'embedding': embedding,
+                'photo_url': final_photo_urls[idx] if idx < len(final_photo_urls) else None,
+                'quality_score': 1.0  # Could add actual quality score
+            }
+            supabase.table('face_embeddings').insert(embedding_data).execute()
+        
+        print(f"✅ Saved {len(embeddings)} embeddings to Supabase")
+        
+        # 8. Save to local cache (SQLite)
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        for embedding in embeddings:
+            emb_blob = np.array(embedding, dtype=np.float32).tobytes()
+            c.execute(
+                "INSERT INTO embeddings (person_id, embedding) VALUES (?, ?)",
+                (person_id, emb_blob)
+            )
+        
+        conn.commit()
+        conn.close()
+        print(f"✅ Saved {len(embeddings)} embeddings to local cache")
+        
+        # 9. Update pending status to 'accepted'
+        supabase.table('pending_enrollments').update({'status': 'accepted'}).eq('id', req.pending_id).execute()
+        
+        # 10. Delete old pending photos from storage
+        for photo_url in photo_urls:
+            bucket_path = photo_url.split('/face-photos/')[-1] if '/face-photos/' in photo_url else None
+            if bucket_path:
+                try:
+                    supabase.storage.from_('face-photos').remove([bucket_path])
+                    print(f"🗑️  Deleted pending photo: {bucket_path}")
+                except Exception as e:
+                    print(f"⚠️  Failed to delete pending photo: {e}")
+        
+        return {
+            "success": True,
+            "person_id": person_id,
+            "name": pending['name'],
+            "embeddings_count": len(embeddings),
+            "photos_uploaded": len(final_photo_urls),
+            "photo_urls": final_photo_urls,
+            "group_id": group_id
+        }
+        
+    except Exception as e:
+        print(f"❌ Error processing pending enrollment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sync_group_embeddings")
+def sync_group_embeddings(req: SyncGroupRequest):
+    """
+    Download group members' embeddings from Supabase to local cache
+    
+    Flow:
+    1. Get group members from Supabase
+    2. Get their face_embeddings from Supabase
+    3. Store in local SQLite cache
+    4. Update sync_metadata timestamp
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not initialized")
+    
+    try:
+        # 1. Get group members
+        response = supabase.table('group_members').select('person_id').eq('group_id', req.group_id).execute()
+        member_person_ids = [m['person_id'] for m in response.data]
+        
+        if not member_person_ids:
+            return {"success": True, "count": 0, "message": "No members in group"}
+        
+        print(f"🔄 Syncing {len(member_person_ids)} members for group {req.group_id}")
+        
+        # 2. Get embeddings for all members
+        embeddings_count = 0
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        # Clear existing embeddings for this group's members (re-sync)
+        c.execute("DELETE FROM embeddings WHERE person_id IN ({}) AND user_id = ?".format(','.join('?' * len(member_person_ids))), 
+                  member_person_ids + [req.user_id])
+        
+        for person_id in member_person_ids:
+            # Get embeddings from Supabase
+            emb_response = supabase.table('face_embeddings').select('embedding').eq('person_id', person_id).execute()
+            
+            for emb_row in emb_response.data:
+                embedding_list = emb_row['embedding']
+                embedding_array = np.array(embedding_list, dtype=np.float32)
+                emb_blob = embedding_array.tobytes()
+                
+                c.execute(
+                    "INSERT INTO embeddings (person_id, embedding) VALUES (?, ?)",
+                    (person_id, emb_blob)
+                )
+                embeddings_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Synced {embeddings_count} embeddings for {len(member_person_ids)} members")
+        
+        return {
+            "success": True,
+            "count": embeddings_count,
+            "members": len(member_person_ids)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error syncing group embeddings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

@@ -7,8 +7,11 @@ import { FaceEnrollmentModal } from "./components/FaceEnrollmentModal";
 import { FaceRecognitionInitializer } from "./components/FaceRecognitionInitializer";
 import { DebugPanel } from "./components/DebugPanel";
 import { CelebrationAnimation } from "./components/CelebrationAnimation";
+import { PendingInbox } from "./components/PendingInbox";
 import { backendRecognitionService } from "./services/BackendRecognitionService";
 import { supabaseDataService } from "./services/SupabaseDataService";
+import { LocalStorageService } from "./services/LocalStorageService";
+import { supabase } from "./lib/supabase";
 import { useAuth } from "./hooks/useAuth";
 import { LoginPage } from "./components/LoginPage";
 import { PublicEnrollmentPage } from "./components/PublicEnrollmentPage";
@@ -85,9 +88,13 @@ export interface Group {
 function WelcomeScreen({
   onNavigate,
   hasLastGroup,
+  user,
+  onSignOut,
 }: {
   onNavigate: (screen: string) => void;
   hasLastGroup: boolean;
+  user: any;
+  onSignOut: () => void;
 }) {
   const [dragStart, setDragStart] = useState<{
     x: number;
@@ -99,6 +106,29 @@ function WelcomeScreen({
   return (
     <div className="min-h-screen flex flex-col items-center p-6 relative overflow-hidden bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900">
       {/* Clean gradient background - no overlay needed */}
+
+      {/* User Info & Sign Out - Top Right */}
+      <div className="absolute top-4 right-4 z-20">
+        <div className="bg-white/10 backdrop-blur-md rounded-xl px-4 py-2 border border-white/20 shadow-lg">
+          <div className="flex items-center space-x-3">
+            <div className="text-right">
+              <div className="text-white text-sm font-medium">
+                {user?.email || 'User'}
+              </div>
+              <div className="text-white/60 text-xs">
+                Signed in
+              </div>
+            </div>
+            <button
+              onClick={onSignOut}
+              className="w-8 h-8 bg-red-500/80 hover:bg-red-500 rounded-full flex items-center justify-center text-white transition-all duration-200 active:scale-95"
+              title="Sign out"
+            >
+              🚪
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Header */}
       <div className="text-center mb-8 z-10">
@@ -149,6 +179,23 @@ function WelcomeScreen({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={() => onNavigate("inbox")}
+              className="bg-white/15 backdrop-blur-md border border-white/30 rounded-2xl p-4 hover:bg-white/25 transition-all duration-300 active:scale-95 shadow-xl"
+            >
+              <div className="text-center">
+                <div className="text-white text-2xl mb-3">
+                  📬
+                </div>
+                <div className="text-white font-medium text-sm">
+                  Inbox
+                </div>
+                <div className="text-white/70 text-xs">
+                  Pending sign-ups
+                </div>
+              </div>
+            </button>
+
             <button
               onClick={() => onNavigate("records")}
               className="bg-white/15 backdrop-blur-md border border-white/30 rounded-2xl p-4 hover:bg-white/25 transition-all duration-300 active:scale-95 shadow-xl"
@@ -464,7 +511,7 @@ function GroupSelectionScreen({
                 <div className="text-white/50 text-xl">▶</div>
                 {group.lastSession && (
                   <div className="text-white/50 text-xs mt-1">
-                    {group.lastSession.toLocaleDateString([], {
+                    {new Date(group.lastSession).toLocaleDateString([], {
                       month: "short",
                       day: "numeric",
                     })}
@@ -1711,11 +1758,13 @@ function SimpleRecords({
 export default function App() {
   // Check if this is a public enrollment link (no auth required)
   const pathname = window.location.pathname;
-  const enrollMatch = pathname.match(/\/enroll\/([a-zA-Z0-9]+)/);
+  // Match: /enroll/{userId}/{groupId} (both are UUIDs with dashes)
+  const enrollMatch = pathname.match(/\/enroll\/([a-zA-Z0-9-]+)\/([a-zA-Z0-9-]+)/);
   
   if (enrollMatch) {
-    const linkCode = enrollMatch[1];
-    return <PublicEnrollmentPage linkCode={linkCode} />;
+    const userId = enrollMatch[1];
+    const groupId = enrollMatch[2];
+    return <PublicEnrollmentPage userId={userId} groupId={groupId} />;
   }
 
   // Authentication check
@@ -1982,51 +2031,112 @@ export default function App() {
     
     const initServices = async () => {
       try {
+        // Show who's signed in
+        logger.system(`👤 Signed in as: ${user.email}`);
+        logger.system(`🆔 User ID: ${user.id}`);
+        console.log('📋 Full user object:', user);
+        
         // Initialize backend face recognition service
         logger.system('Initializing InsightFace backend...');
         await backendRecognitionService.initialize();
         logger.success('InsightFace backend ready!');
 
-        // Load people from Supabase
+        // Load people from Supabase (with offline fallback)
         logger.system('Loading people from Supabase...');
-        const supabasePeople = await supabaseDataService.fetchPeople(user.id);
+        let loadedPeople: Person[] = [];
         
-        const loadedPeople: Person[] = supabasePeople.map(p => ({
-          id: p.id,
-          name: p.name,
-          email: p.email || `${p.name.toLowerCase().replace(/\s+/g, '.')}@scouts.org`,
-          ageGroup: p.age_group || '6th Grade',
-          age: p.age || 11,
-          parentName: p.parent_name || '',
-          parentPhone: p.parent_phone || '',
-          allergies: p.allergies || [],
-          guides: [],
-          status: 'unknown',
-          groups: [],
-          photoPaths: p.photo_paths || [],
-        }));
+        try {
+          const supabasePeople = await supabaseDataService.fetchPeople(user.id);
+          
+          loadedPeople = supabasePeople.map(p => ({
+            id: p.id,
+            name: p.name,
+            email: p.email || `${p.name.toLowerCase().replace(/\s+/g, '.')}@scouts.org`,
+            ageGroup: p.age_group || '6th Grade',
+            age: p.age || 11,
+            parentName: p.parent_name || '',
+            parentPhone: p.parent_phone || '',
+            allergies: p.allergies || [],
+            guides: [],
+            status: 'unknown',
+            groups: [],
+            photoPaths: p.photo_paths || [],
+          }));
+
+          // Save to local storage for offline use
+          LocalStorageService.savePeople(loadedPeople, user.id);
+          LocalStorageService.updateLastSync();
+          logger.success(`Loaded ${loadedPeople.length} people from Supabase`);
+        } catch (error) {
+          // If offline, try loading from local storage
+          logger.system('📵 Offline - Loading people from local storage...');
+          const cachedPeople = LocalStorageService.loadPeople(user.id);
+          if (cachedPeople) {
+            loadedPeople = cachedPeople;
+            logger.success(`📂 Loaded ${loadedPeople.length} people from local storage (offline mode)`);
+          } else {
+            logger.error('No cached data available offline');
+          }
+        }
 
         setPeople(loadedPeople);
-        logger.success(`Loaded ${loadedPeople.length} people from Supabase`);
 
-        // Load groups from Supabase
+        // Load groups from Supabase (with offline fallback)
         logger.system('Loading groups from Supabase...');
-        const supabaseGroups = await supabaseDataService.fetchGroups(user.id);
+        let loadedGroups: Group[] = [];
+        let updatedPeople = loadedPeople;
         
-        const loadedGroups: Group[] = supabaseGroups.map(g => ({
-          id: g.id,
-          name: g.name,
-          description: g.description || '',
-          memberCount: 0, // Will be updated when we load group members
-          capacity: 30,
-          isActive: true,
-          members: [],
-          guides: g.guides_info,
-          notes: g.notes,
-        }));
+        try {
+          const supabaseGroups = await supabaseDataService.fetchGroups(user.id);
+          
+          // Fetch group members for all groups
+          const groupIds = supabaseGroups.map(g => g.id);
+          const membersByGroup = await supabaseDataService.fetchAllGroupMembers(groupIds);
+          
+          loadedGroups = supabaseGroups.map(g => ({
+            id: g.id,
+            name: g.name,
+            description: g.description || '',
+            memberCount: membersByGroup[g.id]?.length || 0,
+            capacity: 30,
+            isActive: true,
+            members: membersByGroup[g.id] || [], // ← NOW LOADS ACTUAL MEMBERS! ✅
+            guides: g.guides_info,
+            notes: g.notes,
+          }));
 
+          // Update people with their group memberships
+          updatedPeople = loadedPeople.map(person => {
+            const personGroups: string[] = [];
+            Object.entries(membersByGroup).forEach(([groupId, members]) => {
+              if (members.includes(person.id)) {
+                personGroups.push(groupId);
+              }
+            });
+            return {
+              ...person,
+              groups: personGroups // ← NOW LOADS ACTUAL GROUP MEMBERSHIPS! ✅
+            };
+          });
+
+          // Save to local storage for offline use
+          LocalStorageService.saveGroups(loadedGroups, user.id);
+          LocalStorageService.savePeople(updatedPeople, user.id); // Update people with group info
+          logger.success(`Loaded ${loadedGroups.length} groups from Supabase`);
+        } catch (error) {
+          // If offline, try loading from local storage
+          logger.system('📵 Offline - Loading groups from local storage...');
+          const cachedGroups = LocalStorageService.loadGroups(user.id);
+          if (cachedGroups) {
+            loadedGroups = cachedGroups;
+            logger.success(`📂 Loaded ${loadedGroups.length} groups from local storage (offline mode)`);
+          } else {
+            logger.error('No cached groups available offline');
+          }
+        }
+
+        setPeople(updatedPeople);
         setGroups(loadedGroups);
-        logger.success(`Loaded ${loadedGroups.length} groups from Supabase`);
 
       } catch (error) {
         logger.error('Failed to initialize services or load data', error);
@@ -2036,6 +2146,20 @@ export default function App() {
 
     initServices();
   }, [user]); // Re-run when user changes
+
+  // Auto-save people to local storage whenever they change
+  useEffect(() => {
+    if (user && people.length > 0) {
+      LocalStorageService.savePeople(people, user.id);
+    }
+  }, [people, user]);
+
+  // Auto-save groups to local storage whenever they change
+  useEffect(() => {
+    if (user && groups.length > 0) {
+      LocalStorageService.saveGroups(groups, user.id);
+    }
+  }, [groups, user]);
 
   const handleFaceCountChange = (
     detected: number,
@@ -2378,6 +2502,27 @@ export default function App() {
     </div>
   );
 
+  // Sign out handler
+  const handleSignOut = async () => {
+    const confirmed = window.confirm('Are you sure you want to sign out?');
+    if (!confirmed) return;
+    
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      // Clear local state
+      setPeople([]);
+      setGroups([]);
+      setRecords([]);
+      
+      logger.success('Signed out successfully');
+    } catch (error) {
+      logger.error('Failed to sign out', error);
+      alert('Failed to sign out. Please try again.');
+    }
+  };
+
   // Render different screens based on current state
   if (currentScreen === "welcome") {
     return (
@@ -2388,6 +2533,8 @@ export default function App() {
             !!selectedGroupId &&
             !!groups.find((g) => g.id === selectedGroupId)
           }
+          user={user}
+          onSignOut={handleSignOut}
         />
       </ScreenWrapper>
     );
@@ -2474,6 +2621,23 @@ export default function App() {
             person={selectedPerson}
             groups={groups}
             onUpdatePerson={handleUpdatePerson}
+          />
+        </div>
+      </ScreenWrapper>
+    );
+  }
+
+  if (currentScreen === "inbox") {
+    return (
+      <ScreenWrapper>
+        <div className="fixed inset-0 bg-white">
+          <PendingInbox
+            isOpen={true}
+            onClose={() => navigateToScreen("welcome")}
+            people={people}
+            setPeople={setPeople}
+            groups={groups}
+            setGroups={setGroups}
           />
         </div>
       </ScreenWrapper>

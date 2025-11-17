@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { backendRecognitionService } from '../services/BackendRecognitionService';
+import { supabaseDataService } from '../services/SupabaseDataService';
+import { useAuth } from '../hooks/useAuth';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
@@ -71,6 +73,7 @@ export function GroupsPanel({
   setPeople,
   onShowPersonDetails
 }: GroupsPanelProps) {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'edit' | 'members'>('list');
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -220,8 +223,12 @@ export function GroupsPanel({
     setEditingGroup(null);
   };
 
-  const handleCreateGroup = () => {
+  const handleCreateGroup = async () => {
     if (!newGroupForm.name) return;
+    if (!user) {
+      console.error('No user logged in');
+      return;
+    }
 
     // Save scroll position before update
     const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
@@ -232,8 +239,11 @@ export function GroupsPanel({
     // Filter out empty guides
     const validGuides = newGroupForm.guides.filter(g => g.name.trim() || g.phone.trim());
 
+    // Generate UUID for group
+    const groupId = crypto.randomUUID();
+
     const newGroup: Group = {
-      id: Date.now().toString(),
+      id: groupId,
       name: newGroupForm.name,
       description: '',
       age: newGroupForm.age,
@@ -249,59 +259,88 @@ export function GroupsPanel({
       parentGroup: newGroupForm.parentGroup || undefined
     };
 
-    // If it's a subgroup, add to parent's subGroups array
-    if (newGroupForm.parentGroup) {
-      const updatedGroups = groups.map(group => {
-        if (group.id === newGroupForm.parentGroup) {
-          return {
-            ...group,
-            subGroups: [...(group.subGroups || []), newGroup.id]
-          };
-        }
-        return group;
+    try {
+      // Save to Supabase
+      console.log(`💾 Saving group "${newGroup.name}" to Supabase...`);
+      await supabaseDataService.createGroup(user.id, {
+        id: groupId,
+        name: newGroup.name,
+        description: newGroup.description,
+        age: newGroup.age,
+        guides_info: validGuides.length > 0 ? validGuides : null,
+        notes: newGroup.notes,
+        capacity: newGroup.capacity
       });
-      setGroups([...updatedGroups, newGroup]);
-    } else {
-      setGroups([...groups, newGroup]);
-    }
+      console.log(`✅ Group saved to Supabase!`);
 
-    setNewGroupForm({ name: '', age: '', guides: [{ name: '', phone: '' }], notes: '', capacity: 10, parentGroup: '' });
-    setShowCreateForm(false);
-    // Persist to backend
-    backendRecognitionService.createGroup(newGroup.id, newGroup.name).catch(() => {});
+      // If it's a subgroup, add to parent's subGroups array
+      if (newGroupForm.parentGroup) {
+        const updatedGroups = groups.map(group => {
+          if (group.id === newGroupForm.parentGroup) {
+            return {
+              ...group,
+              subGroups: [...(group.subGroups || []), newGroup.id]
+            };
+          }
+          return group;
+        });
+        setGroups([...updatedGroups, newGroup]);
+      } else {
+        setGroups([...groups, newGroup]);
+      }
+
+      setNewGroupForm({ name: '', age: '', guides: [{ name: '', phone: '' }], notes: '', capacity: 10, parentGroup: '' });
+      setShowCreateForm(false);
+      
+      // Persist to backend (local)
+      backendRecognitionService.createGroup(newGroup.id, newGroup.name).catch(() => {});
+    } catch (error) {
+      console.error('❌ Failed to create group:', error);
+      alert('Failed to create group. Please try again.');
+    }
   };
 
-  const handleRemoveFromGroup = (personId: string, groupId: string) => {
+  const handleRemoveFromGroup = async (personId: string, groupId: string) => {
     // Save scroll position before update
     const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
 
     // Set flag to prevent useEffect from triggering
     isUpdatingRef.current = true;
 
-    // Remove person from group members
-    const updatedGroups = groups.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          members: group.members.filter(id => id !== personId)
-        };
-      }
-      return group;
-    });
+    try {
+      // Save to Supabase
+      console.log(`💾 Removing person ${personId} from group ${groupId} in Supabase...`);
+      await supabaseDataService.removeGroupMember(groupId, personId);
+      console.log(`✅ Person removed from group in Supabase!`);
 
-    // Remove group from person's groups
-    const updatedPeople = people.map(person => {
-      if (person.id === personId) {
-        return {
-          ...person,
-          groups: person.groups.filter(id => id !== groupId)
-        };
-      }
-      return person;
-    });
+      // Remove person from group members
+      const updatedGroups = groups.map(group => {
+        if (group.id === groupId) {
+          return {
+            ...group,
+            members: group.members.filter(id => id !== personId)
+          };
+        }
+        return group;
+      });
 
-    setGroups(updatedGroups);
-    setPeople(updatedPeople);
+      // Remove group from person's groups
+      const updatedPeople = people.map(person => {
+        if (person.id === personId) {
+          return {
+            ...person,
+            groups: person.groups.filter(id => id !== groupId)
+          };
+        }
+        return person;
+      });
+
+      setGroups(updatedGroups);
+      setPeople(updatedPeople);
+    } catch (error) {
+      console.error('❌ Failed to remove person from group:', error);
+      alert('Failed to remove person from group. Please try again.');
+    }
     
     // Update local state to reflect changes immediately
     if (selectedGroup && selectedGroup.id === groupId) {
@@ -328,37 +367,54 @@ export function GroupsPanel({
     backendRecognitionService.removeGroupMember(groupId, personId).catch(() => {});
   };
 
-  const handleAddToGroup = (personId: string, groupId: string) => {
+  const handleAddToGroup = async (personId: string, groupId: string) => {
     // Save scroll position before update
     const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
 
     // Set flag to prevent useEffect from triggering
     isUpdatingRef.current = true;
 
-    // Add person to group
-    const updatedGroups = groups.map(group => {
-      if (group.id === groupId && !group.members.includes(personId)) {
-        return {
-          ...group,
-          members: [...group.members, personId]
-        };
+    try {
+      // Check if person is already in group
+      const group = groups.find(g => g.id === groupId);
+      if (group && group.members.includes(personId)) {
+        console.log(`ℹ️  Person ${personId} is already in group ${groupId}`);
+        return; // Already added, no need to proceed
       }
-      return group;
-    });
 
-    // Add group to person's groups
-    const updatedPeople = people.map(person => {
-      if (person.id === personId && !person.groups.includes(groupId)) {
-        return {
-          ...person,
-          groups: [...person.groups, groupId]
-        };
-      }
-      return person;
-    });
+      // Save to Supabase
+      console.log(`💾 Adding person ${personId} to group ${groupId} in Supabase...`);
+      await supabaseDataService.addGroupMember(groupId, personId);
+      console.log(`✅ Person added to group in Supabase!`);
 
-    setGroups(updatedGroups);
-    setPeople(updatedPeople);
+      // Add person to group
+      const updatedGroups = groups.map(group => {
+        if (group.id === groupId && !group.members.includes(personId)) {
+          return {
+            ...group,
+            members: [...group.members, personId]
+          };
+        }
+        return group;
+      });
+
+      // Add group to person's groups
+      const updatedPeople = people.map(person => {
+        if (person.id === personId && !person.groups.includes(groupId)) {
+          return {
+            ...person,
+            groups: [...person.groups, groupId]
+          };
+        }
+        return person;
+      });
+
+      setGroups(updatedGroups);
+      setPeople(updatedPeople);
+    } catch (error) {
+      console.error('❌ Failed to add person to group:', error);
+      alert('Failed to add person to group. Please try again.');
+    }
     
     // Update local state to reflect changes immediately
     if (selectedGroup && selectedGroup.id === groupId && !selectedGroup.members.includes(personId)) {
@@ -385,16 +441,23 @@ export function GroupsPanel({
     backendRecognitionService.addGroupMember(groupId, personId).catch(() => {});
   };
 
-  const generateJoinLink = () => {
-    const linkId = Math.random().toString(36).substring(2, 15);
-    return `${window.location.origin}/join-group/${linkId}`;
+  const generateJoinLink = (groupId?: string) => {
+    if (!user?.id) return '';
+    const targetGroupId = groupId || selectedGroup?.id || '';
+    return `${window.location.origin}/enroll/${user.id}/${targetGroupId}`;
   };
 
-  const copyJoinLink = (link: string) => {
+  const copyJoinLink = (groupId?: string) => {
+    const link = generateJoinLink(groupId);
+    if (!link) {
+      alert('Unable to generate link. Please make sure you are signed in.');
+      return;
+    }
+    
     navigator.clipboard.writeText(link);
     // Simple notification without alert
     const notification = document.createElement('div');
-    notification.textContent = 'Join link copied to clipboard!';
+    notification.textContent = '✅ Enrollment link copied to clipboard!';
     notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
     document.body.appendChild(notification);
     setTimeout(() => {
@@ -477,7 +540,7 @@ export function GroupsPanel({
             <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
               <span className="text-sm font-medium">Members: {groupMembers.length}</span>
               <Button
-                onClick={() => copyJoinLink(selectedGroup.joinLink || generateJoinLink())}
+                onClick={() => copyJoinLink(selectedGroup.id)}
                 variant="outline"
                 size="sm"
                 className="text-xs h-8"
