@@ -1303,6 +1303,89 @@ def test_report_download(report_id: str):
     return FileResponse(zip_path, media_type='application/zip', filename=f"{report_id}.zip")
 
 
+class SyncGroupRequest(BaseModel):
+    user_id: str
+    group_id: str
+
+
+@app.post("/sync_group_embeddings")
+def sync_group_embeddings(req: SyncGroupRequest):
+    """
+    Download group members and their embeddings from Supabase to local cache
+    This enables offline recognition by syncing both group_members and embeddings
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not initialized")
+    
+    try:
+        # 1. Get group info and members from Supabase
+        group_response = supabase.table('groups').select('id, name').eq('id', req.group_id).execute()
+        if not group_response.data:
+            return {"success": False, "message": "Group not found"}
+        
+        group_data = group_response.data[0]
+        group_name = group_data.get('name', '')
+        
+        members_response = supabase.table('group_members').select('person_id').eq('group_id', req.group_id).execute()
+        member_person_ids = [m['person_id'] for m in members_response.data]
+        
+        if not member_person_ids:
+            return {"success": True, "count": 0, "message": "No members in group"}
+        
+        print(f"🔄 Syncing group '{group_name}' with {len(member_person_ids)} members")
+        
+        # 2. Sync to local SQLite: groups, group_members, and embeddings
+        conn = get_conn()
+        c = conn.cursor()
+        
+        # Sync group info
+        c.execute(
+            "INSERT OR REPLACE INTO groups(group_id, group_name) VALUES (?, ?)",
+            (req.group_id, group_name)
+        )
+        
+        # Sync group members (clear old ones for this group, then insert new)
+        c.execute("DELETE FROM group_members WHERE group_id = ?", (req.group_id,))
+        for person_id in member_person_ids:
+            c.execute(
+                "INSERT OR IGNORE INTO group_members(group_id, person_id) VALUES (?, ?)",
+                (req.group_id, person_id)
+            )
+        
+        # Sync embeddings (clear existing for these members, then insert new)
+        embeddings_count = 0
+        if member_person_ids:
+            q_marks = ",".join(["?"] * len(member_person_ids))
+            c.execute(f"DELETE FROM embeddings WHERE person_id IN ({q_marks})", member_person_ids)
+        
+        for person_id in member_person_ids:
+            # Get embeddings from Supabase
+            emb_response = supabase.table('face_embeddings').select('embedding').eq('person_id', person_id).execute()
+            
+            for emb_row in emb_response.data:
+                embedding_list = emb_row['embedding']
+                embedding_array = np.array(embedding_list, dtype=np.float32)
+                emb_blob = embedding_array.tobytes()
+                
+                c.execute(
+                    "INSERT INTO embeddings (person_id, embedding) VALUES (?, ?)",
+                    (person_id, emb_blob)
+                )
+                embeddings_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        # Clear cache so it reloads from DB
+        _group_members_cache.pop(req.group_id, None)
+        
+        print(f"✅ Synced group '{group_name}': {embeddings_count} embeddings for {len(member_person_ids)} members")
+        return {"success": True, "count": embeddings_count, "members": len(member_person_ids)}
+    except Exception as e:
+        print(f"❌ Error syncing group embeddings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to sync embeddings: {str(e)}")
+
+
 # ============================================================================
 # NEW ENDPOINTS FOR HYBRID ARCHITECTURE
 # ============================================================================
@@ -1676,68 +1759,6 @@ def process_pending_enrollment(req: ProcessPendingRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/sync_group_embeddings")
-def sync_group_embeddings(req: SyncGroupRequest):
-    """
-    Download group members' embeddings from Supabase to local cache
-    
-    Flow:
-    1. Get group members from Supabase
-    2. Get their face_embeddings from Supabase
-    3. Store in local SQLite cache
-    4. Update sync_metadata timestamp
-    """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase not initialized")
-    
-    try:
-        # 1. Get group members
-        response = supabase.table('group_members').select('person_id').eq('group_id', req.group_id).execute()
-        member_person_ids = [m['person_id'] for m in response.data]
-        
-        if not member_person_ids:
-            return {"success": True, "count": 0, "message": "No members in group"}
-        
-        print(f"🔄 Syncing {len(member_person_ids)} members for group {req.group_id}")
-        
-        # 2. Get embeddings for all members
-        embeddings_count = 0
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        
-        # Clear existing embeddings for this group's members (re-sync)
-        c.execute("DELETE FROM embeddings WHERE person_id IN ({}) AND user_id = ?".format(','.join('?' * len(member_person_ids))), 
-                  member_person_ids + [req.user_id])
-        
-        for person_id in member_person_ids:
-            # Get embeddings from Supabase
-            emb_response = supabase.table('face_embeddings').select('embedding').eq('person_id', person_id).execute()
-            
-            for emb_row in emb_response.data:
-                embedding_list = emb_row['embedding']
-                embedding_array = np.array(embedding_list, dtype=np.float32)
-                emb_blob = embedding_array.tobytes()
-                
-                c.execute(
-                    "INSERT INTO embeddings (person_id, embedding) VALUES (?, ?)",
-                    (person_id, emb_blob)
-                )
-                embeddings_count += 1
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"✅ Synced {embeddings_count} embeddings for {len(member_person_ids)} members")
-        
-        return {
-            "success": True,
-            "count": embeddings_count,
-            "members": len(member_person_ids)
-        }
-        
-    except Exception as e:
-        print(f"❌ Error syncing group embeddings: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

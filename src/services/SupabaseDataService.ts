@@ -231,6 +231,46 @@ class SupabaseDataService {
     return publicUrl
   }
 
+  /**
+   * Get signed URL for a person's photo (for private access)
+   * Returns a temporary authenticated URL that expires in 1 hour
+   */
+  async getPersonPhotoSignedUrl(photoUrl: string): Promise<string> {
+    try {
+      // Extract the path from the URL
+      // URL format: https://xxx.supabase.co/storage/v1/object/public/face-photos/userId/personId/photo.jpg
+      const path = photoUrl.split('/face-photos/')[1]
+      if (!path) {
+        console.warn('Invalid photo URL format:', photoUrl)
+        return photoUrl
+      }
+      
+      // Create a signed URL that expires in 1 hour (3600 seconds)
+      const { data, error } = await supabase.storage
+        .from('face-photos')
+        .createSignedUrl(path, 3600)
+      
+      if (error) {
+        console.warn('Failed to create signed URL:', error)
+        return photoUrl
+      }
+      
+      return data?.signedUrl || photoUrl
+    } catch (err) {
+      console.warn('Error getting signed URL:', err)
+      return photoUrl
+    }
+  }
+
+  /**
+   * Get signed URLs for all photos of a person
+   */
+  async getPersonPhotosSignedUrls(photoPaths: string[]): Promise<string[]> {
+    return Promise.all(
+      photoPaths.map(photoUrl => this.getPersonPhotoSignedUrl(photoUrl))
+    )
+  }
+
   // ============================================================================
   // GROUPS OPERATIONS
   // ============================================================================

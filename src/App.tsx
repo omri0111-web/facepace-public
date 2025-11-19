@@ -11,6 +11,7 @@ import { PendingInbox } from "./components/PendingInbox";
 import { backendRecognitionService } from "./services/BackendRecognitionService";
 import { supabaseDataService } from "./services/SupabaseDataService";
 import { LocalStorageService } from "./services/LocalStorageService";
+import { syncService } from "./services/SyncService";
 import { supabase } from "./lib/supabase";
 import { useAuth } from "./hooks/useAuth";
 import { LoginPage } from "./components/LoginPage";
@@ -778,6 +779,9 @@ function MissingPeopleModal({
   onContinueScan,
   setSelectedPerson,
   setShowPersonDetails,
+  peoplePhotoUrls,
+  viewingPhotosForPerson,
+  setViewingPhotosForPerson,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -794,6 +798,9 @@ function MissingPeopleModal({
   onContinueScan?: () => void;
   setSelectedPerson: (person: Person) => void;
   setShowPersonDetails: (show: boolean) => void;
+  peoplePhotoUrls: {[key: string]: string};
+  viewingPhotosForPerson: Person | null;
+  setViewingPhotosForPerson: (person: Person | null) => void;
 }) {
   if (!isOpen || !selectedGroup) return null;
 
@@ -802,15 +809,14 @@ function MissingPeopleModal({
     groupMembers.includes(person.id),
   );
 
-  // Show people who haven't been marked present yet
-  // In real face recognition mode, the detectedCount comes from actual AI recognition
-  // Missing people are those not yet marked as present (either by AI or manually)
+  // Show people for manual attendance review
+  // Auto-detected people shown separately at top
+  // All non-auto-detected people shown in main list (stay visible even when marked present)
   const autoDetectedSet = new Set(autoDetectedIds || []);
   const autoDetectedPeople = groupPeople.filter((person) => autoDetectedSet.has(person.id));
   const missingPeople = groupPeople.filter((person) => {
     const autoDetected = autoDetectedSet.has(person.id);
-    const manuallyPresent = manualAttendance[person.id] === "present";
-    return !autoDetected && !manuallyPresent;
+    return !autoDetected; // Show all non-auto-detected people
   });
 
   // Auto-detected count
@@ -842,8 +848,8 @@ function MissingPeopleModal({
             </button>
           </div>
           <div className="mt-1 text-sm text-gray-600">
-            {autoDetectedCount} detected • {missingPeople.length}{" "}
-            missing from {selectedGroup.name}
+            {autoDetectedCount} detected • {missingPeople.length - manualPresentCount}{" "}
+            still missing from {selectedGroup.name}
           </div>
         </div>
 
@@ -856,7 +862,13 @@ function MissingPeopleModal({
                 <div key={person.id} className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100">
                   <div className="flex items-center space-x-3 flex-1">
                     <div className="w-12 h-12 rounded-full bg-gray-200 border-2 border-gray-300 overflow-hidden flex-shrink-0">
-                      {person.avatar ? (
+                      {peoplePhotoUrls[person.id] ? (
+                        <img
+                          src={peoplePhotoUrls[person.id]}
+                          alt={person.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : person.avatar ? (
                         <img src={person.avatar} alt={person.name} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
@@ -884,15 +896,27 @@ function MissingPeopleModal({
             Mark scouts present:
           </div>
           <div className="space-y-2">
-            {missingPeople.map((person) => (
+            {missingPeople.map((person) => {
+              const isMarkedPresent = manualAttendance[person.id] === "present";
+              return (
               <div
                 key={person.id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100"
+                className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${
+                  isMarkedPresent
+                    ? "bg-green-50 border-green-200"
+                    : "bg-gray-50 border-gray-100"
+                }`}
               >
                 <div className="flex items-center space-x-3 flex-1">
                   {/* Avatar */}
                   <div className="w-12 h-12 rounded-full bg-gray-200 border-2 border-gray-300 overflow-hidden flex-shrink-0">
-                    {person.avatar ? (
+                    {peoplePhotoUrls[person.id] ? (
+                      <img
+                        src={peoplePhotoUrls[person.id]}
+                        alt={person.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : person.avatar ? (
                       <img
                         src={person.avatar}
                         alt={person.name}
@@ -924,15 +948,30 @@ function MissingPeopleModal({
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => {
-                      setSelectedPerson(person);
-                      setShowPersonDetails(true);
-                    }}
-                    className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-blue-50 text-gray-600 hover:text-blue-600 transition-colors text-xs font-medium"
-                  >
-                    👁️
-                  </button>
+                  {isMarkedPresent && (
+                    <div className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
+                      Manual
+                    </div>
+                  )}
+                  {!isMarkedPresent && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setSelectedPerson(person);
+                          setShowPersonDetails(true);
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-blue-50 text-gray-600 hover:text-blue-600 transition-colors text-xs font-medium"
+                      >
+                        👁️
+                      </button>
+                      <button
+                        onClick={() => setViewingPhotosForPerson(person)}
+                        className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-purple-50 text-gray-600 hover:text-purple-600 transition-colors text-xs font-medium"
+                      >
+                        📷
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() =>
                       onToggleAttendance(person.id)
@@ -949,7 +988,8 @@ function MissingPeopleModal({
                   </button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
 
@@ -1910,6 +1950,14 @@ export default function App() {
   const [showPersonDetails, setShowPersonDetails] =
     useState(false);
   const [showCameraGuide, setShowCameraGuide] = useState(false);
+  
+  // Photo viewer states for attendance screen
+  const [people, setPeople] = useState<Person[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);  // Empty initially - loads from Supabase
+  const [dataLoaded, setDataLoaded] = useState(false); // Track if initial data load is complete
+  const [peoplePhotoUrls, setPeoplePhotoUrls] = useState<{[key: string]: string}>({}); // Map personId -> first photo signed URL
+  const [viewingPhotosForPerson, setViewingPhotosForPerson] = useState<Person | null>(null); // Person whose photos are being viewed
+  const [viewingPersonAllPhotos, setViewingPersonAllPhotos] = useState<string[]>([]); // All signed URLs for viewing person
   const [showGroupSelector, setShowGroupSelector] =
     useState(false);
   const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
@@ -1957,75 +2005,18 @@ export default function App() {
     }
   };
 
-  const [people, setPeople] = useState<Person[]>([]);
-
-  const [groups, setGroups] = useState<Group[]>([
-    {
-      id: "1",
-      name: "Eagle Patrol",
-      description: "Main scout patrol - ages 11-14",
-      memberCount: 8,
-      capacity: 30, // Keep for backwards compatibility but use members.length instead
-      isActive: true,
-      lastSession: new Date(Date.now() - 1000 * 60 * 30),
-      members: ["1", "2", "3", "4", "5", "6", "7", "10"], // 8 people total - added Jake W. (id: '5')
-      subGroups: ["5"],
-      joinLink:
-        "https://scouts.example.com/join/eagle-patrol-abc123",
-    },
-    {
-      id: "2",
-      name: "Wolf Pack",
-      description: "Younger scouts - ages 8-11",
-      memberCount: 5,
-      capacity: 20,
-      isActive: true,
-      lastSession: new Date(Date.now() - 1000 * 60 * 60),
-      members: ["1", "4", "6", "8", "9"], // 5 people total
-      joinLink:
-        "https://scouts.example.com/join/wolf-pack-def456",
-    },
-    {
-      id: "3",
-      name: "Bear Cubs",
-      description: "Creative activities group",
-      memberCount: 2,
-      capacity: 12,
-      isActive: false,
-      lastSession: new Date(Date.now() - 1000 * 60 * 60 * 24),
-      members: ["3", "8"], // 2 people total
-      joinLink:
-        "https://scouts.example.com/join/bear-cubs-ghi789",
-    },
-    {
-      id: "4",
-      name: "Outdoor Explorers",
-      description: "Adventure and hiking specialists",
-      memberCount: 1,
-      capacity: 15,
-      isActive: true,
-      lastSession: new Date(Date.now() - 1000 * 60 * 45),
-      members: ["10"], // 1 person total - Jake W. moved to Eagle Patrol
-      joinLink:
-        "https://scouts.example.com/join/explorers-jkl012",
-    },
-    {
-      id: "5",
-      name: "Patrol Leaders",
-      description: "Senior scouts with leadership roles",
-      memberCount: 0,
-      capacity: 5,
-      isActive: true,
-      members: [],
-      parentGroup: "1",
-      joinLink:
-        "https://scouts.example.com/join/leaders-mno345",
-    },
-  ]);
-
   // Initialize services and load data from Supabase on app load
   useEffect(() => {
-    if (!user) return; // Don't load data if user is not authenticated
+    if (!user) {
+      // Clear data when user signs out
+      setPeople([]);
+      setGroups([]);
+      setDataLoaded(false); // Reset data loaded flag
+      return;
+    }
+
+    // LocalStorageService.loadPeople() and loadGroups() already check userId
+    // So different user's data won't be loaded - no need to clear here
 
     logger.clear(); // Clear console and show app banner
     
@@ -2036,107 +2027,61 @@ export default function App() {
         logger.system(`🆔 User ID: ${user.id}`);
         console.log('📋 Full user object:', user);
         
+        // Initialize sync service
+        syncService.init(user.id);
+        
         // Initialize backend face recognition service
         logger.system('Initializing InsightFace backend...');
         await backendRecognitionService.initialize();
         logger.success('InsightFace backend ready!');
 
-        // Load people from Supabase (with offline fallback)
-        logger.system('Loading people from Supabase...');
+        // Load people from local storage FIRST (fast, works offline)
+        logger.system('📂 Loading people from local storage...');
         let loadedPeople: Person[] = [];
-        
-        try {
-          const supabasePeople = await supabaseDataService.fetchPeople(user.id);
-          
-          loadedPeople = supabasePeople.map(p => ({
-            id: p.id,
-            name: p.name,
-            email: p.email || `${p.name.toLowerCase().replace(/\s+/g, '.')}@scouts.org`,
-            ageGroup: p.age_group || '6th Grade',
-            age: p.age || 11,
-            parentName: p.parent_name || '',
-            parentPhone: p.parent_phone || '',
-            allergies: p.allergies || [],
-            guides: [],
-            status: 'unknown',
-            groups: [],
-            photoPaths: p.photo_paths || [],
-          }));
-
-          // Save to local storage for offline use
-          LocalStorageService.savePeople(loadedPeople, user.id);
-          LocalStorageService.updateLastSync();
-          logger.success(`Loaded ${loadedPeople.length} people from Supabase`);
-        } catch (error) {
-          // If offline, try loading from local storage
-          logger.system('📵 Offline - Loading people from local storage...');
-          const cachedPeople = LocalStorageService.loadPeople(user.id);
-          if (cachedPeople) {
-            loadedPeople = cachedPeople;
-            logger.success(`📂 Loaded ${loadedPeople.length} people from local storage (offline mode)`);
-          } else {
-            logger.error('No cached data available offline');
-          }
+        const cachedPeople = LocalStorageService.loadPeople(user.id);
+        if (cachedPeople && cachedPeople.length > 0) {
+          loadedPeople = cachedPeople;
+          logger.success(`📂 Loaded ${loadedPeople.length} people from local storage`);
+          setPeople(loadedPeople); // Set immediately for fast UI
+        } else {
+          logger.system('No cached people found in local storage');
         }
 
-        setPeople(loadedPeople);
-
-        // Load groups from Supabase (with offline fallback)
-        logger.system('Loading groups from Supabase...');
+        // Load groups from local storage FIRST (fast, works offline)
+        logger.system('📂 Loading groups from local storage...');
         let loadedGroups: Group[] = [];
-        let updatedPeople = loadedPeople;
-        
-        try {
-          const supabaseGroups = await supabaseDataService.fetchGroups(user.id);
-          
-          // Fetch group members for all groups
-          const groupIds = supabaseGroups.map(g => g.id);
-          const membersByGroup = await supabaseDataService.fetchAllGroupMembers(groupIds);
-          
-          loadedGroups = supabaseGroups.map(g => ({
-            id: g.id,
-            name: g.name,
-            description: g.description || '',
-            memberCount: membersByGroup[g.id]?.length || 0,
-            capacity: 30,
-            isActive: true,
-            members: membersByGroup[g.id] || [], // ← NOW LOADS ACTUAL MEMBERS! ✅
-            guides: g.guides_info,
-            notes: g.notes,
-          }));
-
-          // Update people with their group memberships
-          updatedPeople = loadedPeople.map(person => {
-            const personGroups: string[] = [];
-            Object.entries(membersByGroup).forEach(([groupId, members]) => {
-              if (members.includes(person.id)) {
-                personGroups.push(groupId);
-              }
-            });
-            return {
-              ...person,
-              groups: personGroups // ← NOW LOADS ACTUAL GROUP MEMBERSHIPS! ✅
-            };
-          });
-
-          // Save to local storage for offline use
-          LocalStorageService.saveGroups(loadedGroups, user.id);
-          LocalStorageService.savePeople(updatedPeople, user.id); // Update people with group info
-          logger.success(`Loaded ${loadedGroups.length} groups from Supabase`);
-        } catch (error) {
-          // If offline, try loading from local storage
-          logger.system('📵 Offline - Loading groups from local storage...');
-          const cachedGroups = LocalStorageService.loadGroups(user.id);
-          if (cachedGroups) {
-            loadedGroups = cachedGroups;
-            logger.success(`📂 Loaded ${loadedGroups.length} groups from local storage (offline mode)`);
-          } else {
-            logger.error('No cached groups available offline');
-          }
+        const cachedGroups = LocalStorageService.loadGroups(user.id);
+        if (cachedGroups && cachedGroups.length > 0) {
+          loadedGroups = cachedGroups;
+          logger.success(`📂 Loaded ${loadedGroups.length} groups from local storage`);
+          setGroups(loadedGroups); // Set immediately for fast UI
+        } else {
+          logger.system('No cached groups found in local storage');
         }
 
-        setPeople(updatedPeople);
-        setGroups(loadedGroups);
+        // Then sync from Supabase in background (if online) - syncs BOTH people and groups
+        if (navigator.onLine) {
+          logger.system('🔄 Syncing from Supabase (background)...');
+          // Sync in background - don't wait for it
+          syncService.syncFromSupabase(user.id).then(() => {
+            // Reload from local storage after sync (it will have updated data)
+            const syncedPeople = LocalStorageService.loadPeople(user.id);
+            const syncedGroups = LocalStorageService.loadGroups(user.id);
+            if (syncedPeople) {
+              setPeople(syncedPeople);
+            }
+            if (syncedGroups) {
+              setGroups(syncedGroups);
+            }
+          }).catch(error => {
+            logger.warn('⚠️ Background sync failed, using cached data:', error);
+          });
+        } else {
+          logger.system('📵 Offline - Using cached data only');
+        }
+
+        // Mark data as loaded - now safe to auto-save
+        setDataLoaded(true);
 
       } catch (error) {
         logger.error('Failed to initialize services or load data', error);
@@ -2147,19 +2092,21 @@ export default function App() {
     initServices();
   }, [user]); // Re-run when user changes
 
-  // Auto-save people to local storage whenever they change
+  // Auto-save people to local storage whenever they change (AFTER initial load)
+  // Note: Individual operations use SyncService; this just ensures local persistence
   useEffect(() => {
-    if (user && people.length > 0) {
+    if (user && dataLoaded) {
       LocalStorageService.savePeople(people, user.id);
     }
-  }, [people, user]);
+  }, [people, user, dataLoaded]);
 
-  // Auto-save groups to local storage whenever they change
+  // Auto-save groups to local storage whenever they change (AFTER initial load)
+  // Note: Individual operations use SyncService; this just ensures local persistence
   useEffect(() => {
-    if (user && groups.length > 0) {
+    if (user && dataLoaded) {
       LocalStorageService.saveGroups(groups, user.id);
     }
-  }, [groups, user]);
+  }, [groups, user, dataLoaded]);
 
   const handleFaceCountChange = (
     detected: number,
@@ -2194,6 +2141,67 @@ export default function App() {
   );
   const selectedGroupName =
     selectedGroup?.name || "No Group Selected";
+
+  // Load signed URLs for people photos when in attendance screen
+  useEffect(() => {
+    if (!selectedGroup || !people.length) return;
+    
+    const loadPeoplePhotos = async () => {
+      try {
+        const groupMembers = selectedGroup.members || [];
+        const groupPeople = people.filter(p => groupMembers.includes(p.id));
+        
+        // Load signed URLs for people who have photos
+        const photoPromises = groupPeople
+          .filter(p => p.photoPaths && p.photoPaths.length > 0)
+          .map(async (person) => {
+            try {
+              const signedUrl = await supabaseDataService.getPersonPhotoSignedUrl(person.photoPaths![0]);
+              return { personId: person.id, url: signedUrl };
+            } catch (err) {
+              console.warn('Failed to load photo for person:', person.id, err);
+              return null;
+            }
+          });
+        
+        const results = await Promise.all(photoPromises);
+        const urlMap: {[key: string]: string} = {};
+        results.forEach(result => {
+          if (result) {
+            urlMap[result.personId] = result.url;
+          }
+        });
+        
+        setPeoplePhotoUrls(urlMap);
+      } catch (error) {
+        console.error('Error loading people photos:', error);
+      }
+    };
+    
+    loadPeoplePhotos();
+  }, [selectedGroup?.id, people]);
+
+  // Load all photos when photo viewer modal opens
+  useEffect(() => {
+    if (!viewingPhotosForPerson || !viewingPhotosForPerson.photoPaths) {
+      setViewingPersonAllPhotos([]);
+      return;
+    }
+    
+    const loadAllPhotos = async () => {
+      try {
+        const signedUrls = await supabaseDataService.getPersonPhotosSignedUrls(
+          viewingPhotosForPerson.photoPaths!
+        );
+        setViewingPersonAllPhotos(signedUrls);
+      } catch (error) {
+        console.error('Error loading all photos:', error);
+        setViewingPersonAllPhotos([]);
+      }
+    };
+    
+    loadAllPhotos();
+  }, [viewingPhotosForPerson?.id]);
 
   // Calculate actual group size based on members
   const actualGroupSize = selectedGroup?.members.length || 0;
@@ -2275,7 +2283,15 @@ export default function App() {
         // Stay on camera screen; do not auto-navigate
       }
     } else {
-      // Start recording - clear previous states to ensure clean start
+      // Start recording - sync embeddings in background if online (non-blocking)
+      // Recognition will work from local cache whether online or offline
+      if (selectedGroup?.id && user?.id && navigator.onLine) {
+        // Sync in background, don't wait for it
+        backendRecognitionService.syncGroupEmbeddings(selectedGroup.id, user.id).catch(err => {
+          console.warn('Sync failed, using local cache:', err);
+        });
+      }
+      
       setIsRecording(true);
       setRecordingFinished(false);
       setManualAttendance({});
@@ -2510,6 +2526,9 @@ export default function App() {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      
+      // Clear local storage (user-specific data)
+      LocalStorageService.clear();
       
       // Clear local state
       setPeople([]);
@@ -2914,6 +2933,9 @@ export default function App() {
           }}
           setSelectedPerson={setSelectedPerson}
           setShowPersonDetails={setShowPersonDetails}
+          peoplePhotoUrls={peoplePhotoUrls}
+          viewingPhotosForPerson={viewingPhotosForPerson}
+          setViewingPhotosForPerson={setViewingPhotosForPerson}
         />
 
         {/* Person Details Modal */}
@@ -2927,6 +2949,51 @@ export default function App() {
           groups={groups}
           onUpdatePerson={handleUpdatePerson}
         />
+
+        {/* Person Photos Viewer Modal */}
+        {viewingPhotosForPerson && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-semibold">📷 Photos - {viewingPhotosForPerson.name}</h3>
+                  <button
+                    onClick={() => setViewingPhotosForPerson(null)}
+                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 hover:text-gray-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                {viewingPersonAllPhotos.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    {viewingPersonAllPhotos.map((signedUrl, index) => (
+                      <div key={index} className="relative aspect-square">
+                        <img
+                          src={signedUrl}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
+                          onError={(e) => {
+                            // Fallback if signed URL fails
+                            console.warn('Failed to load signed photo URL');
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : viewingPhotosForPerson.photoPaths && viewingPhotosForPerson.photoPaths.length > 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    Loading photos...
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    No photos available for this person.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Face Enrollment Modal */}
         <FaceEnrollmentModal

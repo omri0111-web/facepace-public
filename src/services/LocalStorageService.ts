@@ -72,7 +72,7 @@ export class LocalStorageService {
         timestamp: Date.now(),
       };
       localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(data));
-      console.log(`💾 Saved ${groups.length} groups to local storage`);
+      // Removed verbose logging - only log errors
     } catch (error) {
       console.error('Failed to save groups to local storage:', error);
     }
@@ -84,7 +84,10 @@ export class LocalStorageService {
   static loadGroups(userId: string): Group[] | null {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.GROUPS);
-      if (!stored) return null;
+      
+      if (!stored) {
+        return null;
+      }
 
       const data = JSON.parse(stored);
       

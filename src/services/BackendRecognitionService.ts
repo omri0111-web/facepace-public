@@ -300,6 +300,27 @@ class BackendRecognitionService {
     return await response.json();
   }
 
+  async syncGroupEmbeddings(groupId: string, userId: string): Promise<void> {
+    try {
+      const response = await fetch(`${BASE_URL}/sync_group_embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_id: groupId, user_id: userId })
+      });
+      
+      if (!response.ok) {
+        console.warn('Failed to sync group embeddings:', response.status);
+        // Don't throw - allow recognition to proceed even if sync fails
+      } else {
+        const result = await response.json();
+        console.log(`✅ Synced ${result.count || 0} embeddings for group ${groupId}`);
+      }
+    } catch (error) {
+      console.warn('Error syncing group embeddings:', error);
+      // Don't throw - allow recognition to proceed
+    }
+  }
+
   async processVideoFrame(imageDataUrl: string, timestamp: number): Promise<{
     faces: Array<{
       x: number;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { backendRecognitionService } from '../services/BackendRecognitionService';
 import { supabaseDataService } from '../services/SupabaseDataService';
+import { syncService } from '../services/SyncService';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -153,7 +154,7 @@ export function GroupsPanel({
   };
 
   const handleSaveGroup = async () => {
-    if (!editingGroup) return;
+    if (!editingGroup || !user) return;
 
     // Save scroll position before update
     const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
@@ -174,7 +175,15 @@ export function GroupsPanel({
     );
     setGroups(updatedGroups);
     
-    // Persist to backend
+    // Use SyncService - saves to local storage immediately, syncs to Supabase if online
+    try {
+      await syncService.saveGroup(user.id, updatedGroup);
+      console.log(`✅ Group "${updatedGroup.name}" saved!`);
+    } catch (error) {
+      console.error('Failed to save group:', error);
+    }
+    
+    // Also persist to local backend (for face recognition)
     try {
       await backendRecognitionService.updateGroup(updatedGroup.id, {
         groupName: updatedGroup.name,
@@ -195,11 +204,24 @@ export function GroupsPanel({
       return;
     }
 
+    if (!user) {
+      console.error('No user logged in');
+      return;
+    }
+
     // Save scroll position before update
     const scrollPosition = scrollContainerRef.current?.scrollTop || 0;
 
     // Set flag to prevent useEffect from triggering
     isUpdatingRef.current = true;
+
+    // Use SyncService - updates local storage immediately, syncs to Supabase if online
+    try {
+      await syncService.deleteGroup(user.id, groupId);
+      console.log(`✅ Group ${groupId} deleted!`);
+    } catch (error) {
+      console.error('Failed to delete group:', error);
+    }
 
     // Remove group from state
     const updatedGroups = groups.filter(g => g.id !== groupId);
@@ -212,7 +234,7 @@ export function GroupsPanel({
     }));
     setPeople(updatedPeople);
 
-    // Delete from backend
+    // Delete from backend (for face recognition)
     try {
       await backendRecognitionService.deleteGroup(groupId);
     } catch (error) {
@@ -260,18 +282,9 @@ export function GroupsPanel({
     };
 
     try {
-      // Save to Supabase
-      console.log(`💾 Saving group "${newGroup.name}" to Supabase...`);
-      await supabaseDataService.createGroup(user.id, {
-        id: groupId,
-        name: newGroup.name,
-        description: newGroup.description,
-        age: newGroup.age,
-        guides_info: validGuides.length > 0 ? validGuides : null,
-        notes: newGroup.notes,
-        capacity: newGroup.capacity
-      });
-      console.log(`✅ Group saved to Supabase!`);
+      // Use SyncService - saves to local storage immediately, syncs to Supabase if online
+      await syncService.saveGroup(user.id, newGroup);
+      console.log(`✅ Group "${newGroup.name}" saved!`);
 
       // If it's a subgroup, add to parent's subGroups array
       if (newGroupForm.parentGroup) {
@@ -308,10 +321,9 @@ export function GroupsPanel({
     isUpdatingRef.current = true;
 
     try {
-      // Save to Supabase
-      console.log(`💾 Removing person ${personId} from group ${groupId} in Supabase...`);
-      await supabaseDataService.removeGroupMember(groupId, personId);
-      console.log(`✅ Person removed from group in Supabase!`);
+      // Use SyncService - updates local storage immediately, syncs to Supabase if online
+      await syncService.removeGroupMember(user.id, groupId, personId);
+      console.log(`✅ Person removed from group!`);
 
       // Remove person from group members
       const updatedGroups = groups.map(group => {
@@ -382,10 +394,9 @@ export function GroupsPanel({
         return; // Already added, no need to proceed
       }
 
-      // Save to Supabase
-      console.log(`💾 Adding person ${personId} to group ${groupId} in Supabase...`);
-      await supabaseDataService.addGroupMember(groupId, personId);
-      console.log(`✅ Person added to group in Supabase!`);
+      // Use SyncService - updates local storage immediately, syncs to Supabase if online
+      await syncService.addGroupMember(user.id, groupId, personId);
+      console.log(`✅ Person added to group!`);
 
       // Add person to group
       const updatedGroups = groups.map(group => {

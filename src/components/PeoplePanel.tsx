@@ -9,14 +9,16 @@ import { Textarea } from './ui/textarea';
 import { AddPersonModal } from './AddPersonModal';
 import { backendRecognitionService } from '../services/BackendRecognitionService';
 import { supabaseDataService } from '../services/SupabaseDataService';
+import { syncService } from '../services/SyncService';
 import { useAuth } from '../hooks/useAuth';
 import { logger } from '../utils/logger';
 
-// Helper function to get person's photo URL
+// Helper function to get person's photo URL for avatar
 const getPersonPhotoUrl = (person: Person): string => {
   if (person.photoPaths && person.photoPaths.length > 0) {
-    // Photos are now stored in Supabase, photoPaths contains full URLs
-    return person.photoPaths[0];
+    // For now, use dicebear as fallback (photos need signed URLs which are loaded on-demand)
+    // In the detail modal, we use signed URLs loaded via useEffect
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${person.name}`;
   }
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${person.name}`;
 };
@@ -78,6 +80,8 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
   const [editMode, setEditMode] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [editingPhotos, setEditingPhotos] = useState<Person | null>(null);
+  // Store signed URLs for person photos (maps public URL -> signed URL)
+  const [signedPhotoUrls, setSignedPhotoUrls] = useState<{[key: string]: string}>({});
   // Store full quality metrics for each photo
   const [photoQualityMetrics, setPhotoQualityMetrics] = useState<{[key: string]: {
     face_width_px: number;
@@ -112,12 +116,13 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
   const isUpdatingRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   
-  // Load quality metrics for existing photos when opening photo management
+  // Load signed URLs and quality metrics for existing photos when opening photo management
   useEffect(() => {
     if (!editingPhotos) {
-      // Clear metrics when closing photo management
+      // Clear metrics and signed URLs when closing photo management
       setPhotoQualityMetrics({});
       setUploadNotes([]);
+      setSignedPhotoUrls({});
       return;
     }
     
@@ -125,33 +130,42 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
       return;
     }
     
-    // Check which photos don't have metrics yet using functional update
-    setPhotoQualityMetrics(prev => {
-      const photosNeedingMetrics = editingPhotos.photoPaths!.filter(
-        path => !prev[path]
-      );
-      
-      if (photosNeedingMetrics.length === 0) return prev; // All metrics already loaded
-      
-      // Load metrics for photos that don't have them
-      // Use canvas to convert image to base64 (avoids CORS issues)
-      const loadMetrics = async () => {
-        for (const photoPath of photosNeedingMetrics) {
+    // Load signed URLs and quality metrics
+    const loadPhotosAndMetrics = async () => {
+      try {
+        // First, get signed URLs for all photos (authenticated access)
+        const signedUrls = await supabaseDataService.getPersonPhotosSignedUrls(editingPhotos.photoPaths!);
+        const urlMap: {[key: string]: string} = {};
+        editingPhotos.photoPaths!.forEach((publicUrl, index) => {
+          urlMap[publicUrl] = signedUrls[index];
+        });
+        setSignedPhotoUrls(urlMap);
+        
+        // Then load quality metrics for photos that don't have them yet
+        const photosNeedingMetrics = editingPhotos.photoPaths!.filter(
+          path => !photoQualityMetrics[path]
+        );
+        
+        if (photosNeedingMetrics.length === 0) {
+          return;
+        }
+        
+        for (const publicUrl of photosNeedingMetrics) {
           try {
-            // Photos are in Supabase, photoPath is already a full URL
-            const photoUrl = photoPath;
+            const signedUrl = urlMap[publicUrl];
+            if (!signedUrl) continue;
             
-            // Create an image element and load the URL
+            // Create an image element and load the signed URL
             const img = new Image();
-            img.crossOrigin = 'anonymous'; // Try to allow CORS if backend supports it
+            img.crossOrigin = 'anonymous';
             
             await new Promise((resolve, reject) => {
               img.onload = resolve;
               img.onerror = reject;
-              img.src = photoUrl;
+              img.src = signedUrl;
             });
             
-            // Convert image to base64 using canvas (doesn't require CORS)
+            // Convert image to base64 using canvas
             const canvas = document.createElement('canvas');
             canvas.width = img.width;
             canvas.height = img.height;
@@ -166,10 +180,10 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
               const quality = await backendRecognitionService.scorePhotoQuality(dataURL);
               setPhotoQualityMetrics(prevMetrics => {
                 // Check again to avoid overwriting if already set
-                if (prevMetrics[photoPath]) return prevMetrics;
+                if (prevMetrics[publicUrl]) return prevMetrics;
                 return {
                   ...prevMetrics,
-                  [photoPath]: {
+                  [publicUrl]: {
                     face_width_px: quality.metrics?.face_width_px || 0,
                     sharpness: quality.metrics?.sharpness || 0,
                     brightness: quality.metrics?.brightness || 0,
@@ -181,18 +195,19 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
               });
             } catch (err) {
               // Skip if quality check fails
-              console.warn('Failed to get quality metrics for photo:', photoPath, err);
+              console.warn('Failed to get quality metrics for photo:', publicUrl, err);
             }
           } catch (err) {
-            // Skip if image load fails (CORS or other issues)
-            console.warn('Failed to load photo for quality check:', photoPath, err);
+            // Skip if image load fails
+            console.warn('Failed to load photo for quality check:', publicUrl, err);
           }
         }
-      };
-      
-      loadMetrics();
-      return prev; // Return unchanged for now, metrics will be updated async
-    });
+      } catch (error) {
+        console.error('Error loading photos and metrics:', error);
+      }
+    };
+    
+    loadPhotosAndMetrics();
   }, [editingPhotos?.id, editingPhotos?.photoPaths?.join(',')]);
 
   // Sync selectedPerson with people prop changes
@@ -304,7 +319,10 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
         photoPaths: supabasePerson.photo_paths || [],
       };
 
-      logger.success('Person added to UI', { id: supabasePerson.id, name: supabasePerson.name });
+      // Save to local storage via SyncService (will sync to Supabase if online)
+      await syncService.savePerson(user.id, newPerson);
+      
+      logger.success('Person added', { id: supabasePerson.id, name: supabasePerson.name });
       setPeople([newPerson, ...people]);
       setShowAddPersonModal(false);
     } catch (error) {
@@ -315,8 +333,8 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
 
   const handleRemovePerson = async (personId: string) => {
     try {
-      // Delete from Supabase (this will CASCADE delete embeddings and group memberships)
-      await supabaseDataService.deletePerson(personId);
+      // Use SyncService - updates local storage immediately, syncs to Supabase if online
+      await syncService.deletePerson(user.id, personId);
       
       // Remove person from all groups in local state
       const updatedGroups = groups.map(group => ({
@@ -331,10 +349,10 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
       setGroups(updatedGroups);
       setPeople(updatedPeople);
 
-      logger.success('Person deleted from Supabase', { personId });
+      logger.success('Person deleted', { personId });
     } catch (error) {
-      logger.error('Failed to delete person from Supabase', error);
-      console.error('Supabase delete error:', error);
+      logger.error('Failed to delete person', error);
+      console.error('Delete error:', error);
     }
   };
 
@@ -921,7 +939,7 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                     editingPhotos.photoPaths.map((photoPath, index) => (
                       <div key={index} className="relative aspect-square">
                         <img
-                          src={backendRecognitionService.getPersonPhotoUrl(editingPhotos.id, photoPath)}
+                          src={signedPhotoUrls[photoPath] || photoPath}
                           alt={`Photo ${index + 1}`}
                           className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
                         />
