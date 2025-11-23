@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { PeoplePanel } from "./components/PeoplePanel";
 import { GroupsPanel } from "./components/GroupsPanel";
 import { AdminPanel } from "./components/AdminPanel";
@@ -17,6 +17,7 @@ import { useAuth } from "./hooks/useAuth";
 import { LoginPage } from "./components/LoginPage";
 import { PublicEnrollmentPage } from "./components/PublicEnrollmentPage";
 import { VideoTestPage } from "./components/VideoTestPage";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { logger } from "./utils/logger";
 
 export interface AttendanceRecordType {
@@ -91,11 +92,13 @@ function WelcomeScreen({
   hasLastGroup,
   user,
   onSignOut,
+  pendingCount = 0,
 }: {
   onNavigate: (screen: string) => void;
   hasLastGroup: boolean;
   user: any;
   onSignOut: () => void;
+  pendingCount?: number;
 }) {
   const [dragStart, setDragStart] = useState<{
     x: number;
@@ -104,36 +107,50 @@ function WelcomeScreen({
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
+  const displayName =
+    user?.user_metadata?.name ||
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.display_name ||
+    (user?.email ? user.email.split("@")[0] : "Leader");
+  const displayInitial = displayName?.charAt(0).toUpperCase() || "L";
+
   return (
     <div className="min-h-screen flex flex-col items-center p-6 relative overflow-hidden bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900">
       {/* Clean gradient background - no overlay needed */}
 
-      {/* User Info & Sign Out - Top Right */}
+      {/* Inbox - Top Left */}
+      <div className="absolute top-4 left-4 z-20">
+        <button
+          onClick={() => onNavigate("inbox")}
+          className="relative w-10 h-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95"
+        >
+          <span className="text-xl">📬</span>
+          {pendingCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center border border-gray-900">
+              {pendingCount > 9 ? "9+" : pendingCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Settings / User - Top Right */}
       <div className="absolute top-4 right-4 z-20">
-        <div className="bg-white/10 backdrop-blur-md rounded-xl px-4 py-2 border border-white/20 shadow-lg">
-          <div className="flex items-center space-x-3">
-            <div className="text-right">
-              <div className="text-white text-sm font-medium">
-                {user?.email || 'User'}
-              </div>
-              <div className="text-white/60 text-xs">
-                Signed in
-              </div>
-            </div>
-            <button
-              onClick={onSignOut}
-              className="w-8 h-8 bg-red-500/80 hover:bg-red-500 rounded-full flex items-center justify-center text-white transition-all duration-200 active:scale-95"
-              title="Sign out"
-            >
-              🚪
-            </button>
-          </div>
-        </div>
+        <button
+          onClick={() => onNavigate("settings")}
+          className="bg-white/10 backdrop-blur-md rounded-full px-3 py-1.5 border border-white/20 shadow-lg flex items-center space-x-2 hover:bg-white/20 transition-all active:scale-95 max-w-[180px]"
+        >
+          <span className="text-white text-sm font-medium truncate">
+            {displayName}
+          </span>
+          <span className="text-lg text-white">⚙️</span>
+        </button>
       </div>
 
       {/* Header */}
-      <div className="text-center mb-8 z-10">
-        <div className="mb-6"></div>
+      <div
+        className="text-center mb-4 z-10"
+        style={{ paddingTop: 60 }}
+      >
         <h1 className="text-white mb-2 text-4xl tracking-wide drop-shadow-lg">
           FacePace
         </h1>
@@ -149,15 +166,11 @@ function WelcomeScreen({
               className="bg-white/15 backdrop-blur-md border border-white/30 rounded-2xl p-4 hover:bg-white/25 transition-all duration-300 active:scale-95 shadow-xl"
             >
               <div className="text-center">
-                <div className="text-white text-2xl mb-3">
-                  👥
-                </div>
+                <div className="text-white text-2xl mb-3">👥</div>
                 <div className="text-white font-medium text-sm">
                   People
                 </div>
-                <div className="text-white/70 text-xs">
-                  Manage scouts
-                </div>
+                <div className="text-white/70 text-xs">Manage scouts</div>
               </div>
             </button>
 
@@ -166,51 +179,26 @@ function WelcomeScreen({
               className="bg-white/15 backdrop-blur-md border border-white/30 rounded-2xl p-4 hover:bg-white/25 transition-all duration-300 active:scale-95 shadow-xl"
             >
               <div className="text-center">
-                <div className="text-white text-2xl mb-3">
-                  👨‍👩‍👧‍👦
-                </div>
+                <div className="text-white text-2xl mb-3">👨‍👩‍👧‍👦</div>
                 <div className="text-white font-medium text-sm">
                   Groups
                 </div>
-                <div className="text-white/70 text-xs">
-                  Manage patrols
-                </div>
+                <div className="text-white/70 text-xs">Manage patrols</div>
               </div>
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <button
-              onClick={() => onNavigate("inbox")}
-              className="bg-white/15 backdrop-blur-md border border-white/30 rounded-2xl p-4 hover:bg-white/25 transition-all duration-300 active:scale-95 shadow-xl"
-            >
-              <div className="text-center">
-                <div className="text-white text-2xl mb-3">
-                  📬
-                </div>
-                <div className="text-white font-medium text-sm">
-                  Inbox
-                </div>
-                <div className="text-white/70 text-xs">
-                  Pending sign-ups
-                </div>
-              </div>
-            </button>
-
-            <button
               onClick={() => onNavigate("records")}
               className="bg-white/15 backdrop-blur-md border border-white/30 rounded-2xl p-4 hover:bg-white/25 transition-all duration-300 active:scale-95 shadow-xl"
             >
               <div className="text-center">
-                <div className="text-white text-2xl mb-3">
-                  📊
-                </div>
+                <div className="text-white text-2xl mb-3">📊</div>
                 <div className="text-white font-medium text-sm">
                   Records
                 </div>
-                <div className="text-white/70 text-xs">
-                  View history
-                </div>
+                <div className="text-white/70 text-xs">View history</div>
               </div>
             </button>
 
@@ -219,37 +207,16 @@ function WelcomeScreen({
               className="bg-white/15 backdrop-blur-md border border-white/30 rounded-2xl p-4 hover:bg-white/25 transition-all duration-300 active:scale-95 shadow-xl"
             >
               <div className="text-center">
-                <div className="text-white text-2xl mb-3">
-                  🛡️
-                </div>
+                <div className="text-white text-2xl mb-3">🛡️</div>
                 <div className="text-white font-medium text-sm">
                   Admin
                 </div>
-                <div className="text-white/70 text-xs">
-                  Control center
-                </div>
+                <div className="text-white/70 text-xs">Control center</div>
               </div>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            <button
-              onClick={() => onNavigate("test")}
-              className="bg-blue-600/80 backdrop-blur-md border border-blue-400/50 rounded-2xl p-4 hover:bg-blue-600/90 transition-all duration-300 active:scale-95 shadow-xl"
-            >
-              <div className="text-center">
-                <div className="text-white text-2xl mb-3">
-                  🧪
-                </div>
-                <div className="text-white font-medium text-sm">
-                  Video Test
-                </div>
-                <div className="text-white/70 text-xs">
-                  Test recognition accuracy
-                </div>
-              </div>
-            </button>
-          </div>
+          {/* (Video Test entry moved into Settings screen quick actions) */}
         </div>
       </div>
 
@@ -285,7 +252,6 @@ function WelcomeScreen({
                 });
                 setDragOffset(0);
                 setIsDragging(false);
-                e.preventDefault(); // Prevent default touch behavior
               }}
               onTouchMove={(e) => {
                 if (!dragStart) return;
@@ -303,7 +269,6 @@ function WelcomeScreen({
                   setDragOffset(
                     Math.min(120, Math.max(0, deltaX)),
                   ); // Only positive (right) movement
-                  e.preventDefault(); // Prevent scrolling when dragging
                 }
               }}
               onTouchEnd={(e) => {
@@ -311,11 +276,7 @@ function WelcomeScreen({
 
                 // Lower threshold for trigger - 60px instead of 100px
                 if (dragOffset > 60 && hasLastGroup) {
-                  e.preventDefault(); // Prevent click event
                   onNavigate("camera");
-                } else if (isDragging) {
-                  // Prevent click if we were dragging but didn't trigger
-                  e.preventDefault();
                 }
 
                 // Reset drag state
@@ -327,7 +288,6 @@ function WelcomeScreen({
                 setDragStart({ x: e.clientX, y: e.clientY });
                 setDragOffset(0);
                 setIsDragging(false);
-                e.preventDefault(); // Prevent text selection
               }}
               onMouseMove={(e) => {
                 if (!dragStart) return;
@@ -344,7 +304,6 @@ function WelcomeScreen({
                   setDragOffset(
                     Math.min(120, Math.max(0, deltaX)),
                   ); // Only positive (right) movement
-                  e.preventDefault();
                 }
               }}
               onMouseUp={(e) => {
@@ -352,11 +311,7 @@ function WelcomeScreen({
 
                 // Lower threshold for trigger
                 if (dragOffset > 60 && hasLastGroup) {
-                  e.preventDefault(); // Prevent click event
                   onNavigate("camera");
-                } else if (isDragging) {
-                  // Prevent click if we were dragging but didn't trigger
-                  e.preventDefault();
                 }
 
                 // Reset drag state
@@ -427,7 +382,6 @@ function WelcomeScreen({
     </div>
   );
 }
-
 // Group Selection Screen Component
 function GroupSelectionScreen({
   groups,
@@ -1961,6 +1915,7 @@ export default function App() {
   const [showGroupSelector, setShowGroupSelector] =
     useState(false);
   const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
+  const [pendingEnrollmentCount, setPendingEnrollmentCount] = useState(0);
 
   // Update person function
   const handleUpdatePerson = async (updatedPerson: Person) => {
@@ -2107,6 +2062,29 @@ export default function App() {
       LocalStorageService.saveGroups(groups, user.id);
     }
   }, [groups, user, dataLoaded]);
+
+  // Fetch pending enrollment count
+  const fetchPendingCount = async () => {
+    if (!user) {
+      setPendingEnrollmentCount(0);
+      return;
+    }
+    try {
+      const enrollments = await supabaseDataService.fetchPendingEnrollments(user.id);
+      setPendingEnrollmentCount(enrollments.length);
+    } catch (error) {
+      logger.error('Failed to fetch pending enrollment count', error);
+      setPendingEnrollmentCount(0);
+    }
+  };
+
+  // Fetch count when user changes or when returning from inbox
+  useEffect(() => {
+    fetchPendingCount();
+    // Refresh count every 30 seconds
+    const interval = setInterval(fetchPendingCount, 30000);
+    return () => clearInterval(interval);
+  }, [user, currentScreen]); // Refresh when screen changes (e.g., returning from inbox)
 
   const handleFaceCountChange = (
     detected: number,
@@ -2518,6 +2496,23 @@ export default function App() {
     </div>
   );
 
+  const handleClearOfflineData = useCallback(() => {
+    try {
+      LocalStorageService.clear();
+      setPeople([]);
+      setGroups([]);
+      setRecords([]);
+      setManualAttendance({});
+      setPendingRecord(null);
+      setSelectedGroupId(null);
+      logger.info("Cleared offline data cache");
+      alert("Offline data cache cleared. Sync again to refresh from Supabase.");
+    } catch (error) {
+      logger.error("Failed to clear offline data", error);
+      alert("Failed to clear offline data. Please try again.");
+    }
+  }, []);
+
   // Sign out handler
   const handleSignOut = async () => {
     const confirmed = window.confirm('Are you sure you want to sign out?');
@@ -2554,7 +2549,25 @@ export default function App() {
           }
           user={user}
           onSignOut={handleSignOut}
+          pendingCount={pendingEnrollmentCount}
         />
+      </ScreenWrapper>
+    );
+  }
+
+  if (currentScreen === "settings") {
+    return (
+      <ScreenWrapper>
+        <div className="fixed inset-0 bg-white">
+          <SettingsScreen
+            user={user}
+            onBack={() => navigateToScreen("welcome")}
+            onOpenVideoTest={() => navigateToScreen("test")}
+            onOpenInbox={() => navigateToScreen("inbox")}
+            onClearOfflineData={handleClearOfflineData}
+            onSignOut={handleSignOut}
+          />
+        </div>
       </ScreenWrapper>
     );
   }

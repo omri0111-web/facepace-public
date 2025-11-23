@@ -7,6 +7,7 @@ import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 import { AddPersonModal } from './AddPersonModal';
+import { SmartCamera } from './SmartCamera';
 import { backendRecognitionService } from '../services/BackendRecognitionService';
 import { supabaseDataService } from '../services/SupabaseDataService';
 import { syncService } from '../services/SyncService';
@@ -1089,118 +1090,62 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                     </p>
                   </>
                 ) : (
-                  <>
-                    <h4 className="text-sm font-medium mb-3">📷 Take Photo</h4>
-                    
-                    {/* Reserve fixed height for camera to prevent layout jump */}
-                    <div className="relative bg-black rounded-lg overflow-hidden mb-3 h-[300px]">
-                      <video
-                        ref={photoCameraVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button
-                        onClick={async () => {
-                          const video = photoCameraVideoRef.current;
-                          if (!video || !photoCameraStream) {
-                            // Start camera if not running yet
-                            try {
-                              const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-                              setPhotoCameraStream(stream);
-                              if (photoCameraVideoRef.current) {
-                                photoCameraVideoRef.current.srcObject = stream;
-                              }
-                            } catch (error) {
-                              logger.error('Failed to start camera', error);
-                              setUploadNotes(prev => ['Could not access camera', ...prev].slice(0,5));
-                            }
-                            return;
-                          }
+                  <SmartCamera
+                    isOpen={true}
+                    photoCount={editingPhotos.photoPaths?.length || 0}
+                    onCancel={() => setShowPhotoCamera(false)}
+                    onPhotoCaptured={async (blob, quality) => {
+                      try {
+                        // Convert blob to base64 for upload
+                        const reader = new FileReader();
+                        reader.readAsDataURL(blob);
+                        reader.onloadend = async () => {
+                          const imageDataUrl = reader.result as string;
                           
-                          // Capture photo from video
-                          const canvas = document.createElement('canvas');
-                          canvas.width = video.videoWidth;
-                          canvas.height = video.videoHeight;
-                          const ctx = canvas.getContext('2d');
-                          if (!ctx) return;
+                          setUploadNotes(prev => [
+                            `Accepted (score: ${Math.round(quality.score)})`,
+                            ...prev
+                          ].slice(0,5));
                           
-                          ctx.drawImage(video, 0, 0);
-                          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                          // Upload photo
+                          const result = await backendRecognitionService.uploadPersonPhoto(editingPhotos.id, imageDataUrl);
                           
-                          try {
-                            // Validate photo quality
-                            const quality = await backendRecognitionService.scorePhotoQuality(imageDataUrl);
-                            if (!quality.passed) {
-                              setUploadNotes(prev => [
-                                `Rejected: ${[...(quality.reasons||[])].join('; ')}`,
-                                ...prev
-                              ].slice(0,5));
-                              return;
+                          // Store full quality metrics
+                          setPhotoQualityMetrics(prev => ({
+                            ...prev,
+                            [result.filename]: {
+                              face_width_px: quality.metrics.faceSize ? quality.metrics.faceSize * 640 : 0, // Estimate
+                              sharpness: quality.metrics.sharpness || 0,
+                              brightness: quality.metrics.brightness || 0,
+                              contrast: quality.metrics.contrast || 0,
+                              roll_abs: null,
+                              passed: quality.passed
                             }
-                            setUploadNotes(prev => [
-                              `Accepted (width ${Math.round(quality.metrics?.face_width_px||0)}px, sharp ${Math.round(quality.metrics?.sharpness||0)})`,
-                              ...prev
-                            ].slice(0,5));
-                            
-                            // Upload photo
-                            const result = await backendRecognitionService.uploadPersonPhoto(editingPhotos.id, imageDataUrl);
-                            
-                            // Store full quality metrics
-                            setPhotoQualityMetrics(prev => ({
-                              ...prev,
-                              [result.filename]: {
-                                face_width_px: quality.metrics?.face_width_px || 0,
-                                sharpness: quality.metrics?.sharpness || 0,
-                                brightness: quality.metrics?.brightness || 0,
-                                contrast: quality.metrics?.contrast || 0,
-                                roll_abs: quality.metrics?.roll_abs || null,
-                                passed: quality.passed
-                              }
-                            }));
-                            
-                            // Update local state
-                            const updatedPhotoPaths = [...(editingPhotos.photoPaths || []), result.filename];
-                            const updatedPerson = { ...editingPhotos, photoPaths: updatedPhotoPaths };
-                            setEditingPhotos(updatedPerson);
-                            setPeople(people.map(p => p.id === editingPhotos.id ? updatedPerson : p));
-                            
-                            // Close camera
-                            if (photoCameraStream) {
-                              photoCameraStream.getTracks().forEach(track => track.stop());
-                              setPhotoCameraStream(null);
-                            }
-                            setShowPhotoCamera(false);
-                          } catch (error) {
-                            logger.error('Failed to capture photo', error);
-                            setUploadNotes(prev => ['Failed to capture photo. Please try again.', ...prev].slice(0,5));
-                          }
-                        }}
-                        type="button"
-                        className="h-12 bg-blue-500 hover:bg-blue-600"
-                      >
-                        📸 Capture
-                      </Button>
-                      
-                      <Button
-                        onClick={() => {
-                          if (photoCameraStream) {
-                            photoCameraStream.getTracks().forEach(track => track.stop());
-                            setPhotoCameraStream(null);
-                          }
-                          setShowPhotoCamera(false);
-                        }}
-                        variant="outline"
-                        className="h-12"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </>
+                          }));
+                          
+                          // Update local state
+                          const updatedPhotoPaths = [...(editingPhotos.photoPaths || []), result.filename];
+                          const updatedPerson = { ...editingPhotos, photoPaths: updatedPhotoPaths };
+                          setEditingPhotos(updatedPerson);
+                          setPeople(people.map(p => p.id === editingPhotos.id ? updatedPerson : p));
+                          
+                          // Don't close camera immediately to allow multiple photos
+                          // But the SmartCamera UI might need a "Next" or "Done" trigger?
+                          // For now, let's keep it open or close it? 
+                          // The user said "Photo 1 of 4", implying a flow.
+                          // But here we are in "Manage Photos", adding one by one.
+                          // Let's keep it open for flow, or maybe close it?
+                          // User request: "make sure the taking pic button is not moving at all... nicely flow"
+                          // I'll keep it open so they can take another one if they want.
+                          // But I should probably give feedback in the camera itself. 
+                          // The SmartCamera handles its own success feedback.
+                        };
+                      } catch (error) {
+                        logger.error('Failed to upload photo', error);
+                        setUploadNotes(prev => ['Failed to upload photo', ...prev].slice(0,5));
+                      }
+                    }}
+                  />
                 )}
               </div>
 

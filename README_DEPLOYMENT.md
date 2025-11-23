@@ -9,10 +9,10 @@ Your FacePace attendance app is now ready to deploy to the internet with multi-u
 - Secure authentication with email/password
 - Row-level security ensures data isolation
 
-### ☁️ Cloud Infrastructure  
-- **Supabase**: Database, authentication, and photo storage
-- **Railway**: AI-powered face recognition backend
-- **Vercel**: Fast global CDN for frontend
+### ☁️ Cloud Infrastructure (Today & Roadmap)
+- **Supabase**: Database, authentication, and photo storage (source of truth)
+- **Local / Railway backend**: InsightFace-based recognition engine (research + testing)
+- **Vercel**: Fast global CDN for frontend (public enrollment + admin UI)
 
 ### 🔐 Enterprise Security
 - Encrypted passwords (bcrypt)
@@ -24,7 +24,7 @@ Your FacePace attendance app is now ready to deploy to the internet with multi-u
 - **Enrollment Links**: Share a link for people to add themselves
 - **Data Sharing**: Export/import people and groups (coming soon)
 - **Cloud Photos**: Photos stored securely in Supabase Storage
-- **Real-time Sync**: Changes sync across devices instantly
+- **Real-time Sync**: Changes sync across devices using Supabase + local caches
 
 ## 📚 Documentation
 
@@ -151,24 +151,38 @@ Follow the step-by-step guide in **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)**
     └── ARCHITECTURE.md         # 🆕 System architecture
 ```
 
-## 🏗️ Architecture
+## 🏗️ Architecture (Current & Roadmap)
 
-```
-User Browser (You!)
-      ↓
-   VERCEL                    ← Frontend (React app)
-   (FREE)                      - Login/signup
-      ↓           ↓            - People management
-      ↓           ↓            - Group management
-   SUPABASE    RAILWAY         - Camera access
-   (FREE)      ($5/mo)      
-      ↓           ↓
-   PostgreSQL  Face AI         ← Backend services
-   Auth        Recognition       - Data storage
-   Storage                      - Authentication
-                                - Face detection
-                                - Recognition
-```
+### Current (Local + Cloud Hybrid)
+
+- **Frontend (React app)**  
+  - Runs on your laptop during development.  
+  - Uses Supabase for auth + data.  
+  - Uses LocalStorage as an offline cache for people + groups.
+- **Backend (FastAPI + InsightFace)**  
+  - Runs locally for now.  
+  - Handles face embedding + recognition, pending enrollment processing, and a SQLite cache of embeddings/groups.
+- **Supabase (Cloud)**  
+  - Stores people, groups, group_members, pending_enrollments, face_embeddings metadata, and photo paths.  
+  - Hosts the `face-photos` storage bucket.
+
+### Online Rollout Roadmap
+
+For details see `docs/ONLINE_ROADMAP.md`, but in short:
+
+1. **Phase 1 – Stabilize local + Supabase**  
+   - Confirm offline sync, Inbox, and recognition flows are solid.  
+   - Keep engine behind a narrow backend API so the model can change later without touching the frontend.
+2. **Phase 2 – Public enrollment online (Vercel only)**  
+   - Deploy React app to Vercel and share `/enroll/{userId}/{groupId}` links.  
+   - Backend + admin app still run on your laptop; Inbox accepts enrollments into Supabase.
+3. **Phase 3 – Full web app + backend online (Vercel + Railway)**  
+   - Move entire frontend to Vercel and backend to Railway.  
+   - Keep SQLite + LocalStorage as caches while Supabase stays the main DB.
+4. **Phase 4 – Swap recognition engine**  
+   - Replace InsightFace with the chosen engine (server SDK first, or mobile SDK directly on iOS) behind the same API contract.
+5. **Phase 5 – iOS app with on-device engine (final product)**  
+   - Build a native iOS app that uses a mobile SDK on the phone, with Supabase as shared database and the web app for public enrollment/admin.
 
 ## 💰 Cost
 

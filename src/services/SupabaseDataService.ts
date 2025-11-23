@@ -338,13 +338,25 @@ class SupabaseDataService {
       .update(updates)
       .eq('id', groupId)
       .select()
-      .single()
-    
+      .maybeSingle()
+
     if (error) {
       console.error('Error updating group:', error)
       throw error
     }
-    
+
+    if (!data) {
+      console.warn(
+        'updateGroup: no Supabase row updated for group, returning local updates only',
+        { groupId, updates },
+      )
+      // Fallback: return a merged object so callers can still update UI state
+      return {
+        id: groupId,
+        ...(updates as Group),
+      }
+    }
+
     return data
   }
 

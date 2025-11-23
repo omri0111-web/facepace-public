@@ -161,6 +161,34 @@ else:
     logger.warning("⚠️  Supabase credentials not found in environment variables")
 
 face_app: Optional[FaceAnalysis] = None
+
+# Auto-initialize face recognition on startup
+@app.on_event("startup")
+async def startup_event():
+    """Auto-initialize face recognition model on server startup"""
+    global face_app
+    if face_app is None:
+        try:
+            logger.info("🤖 Auto-initializing face recognition model...")
+            # Try installed InsightFace first; fallback to local source if needed
+            try:
+                from insightface.app import FaceAnalysis  # site-packages
+            except ImportError:
+                # Fallback: try local source
+                import sys
+                local_insightface = os.path.join(os.path.dirname(__file__), "insightface")
+                if os.path.isdir(local_insightface):
+                    sys.path.insert(0, local_insightface)
+                    from insightface.app import FaceAnalysis  # local fallback
+            
+            fa = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
+            fa.prepare(ctx_id=-1, det_size=(640, 640))
+            face_app = fa
+            logger.info("✅ Face recognition model initialized successfully!")
+        except Exception as e:
+            logger.error(f"⚠️  Failed to auto-initialize face recognition: {e}")
+            logger.warning("⚠️  Face recognition will need to be initialized manually via /init endpoint")
+
 # -----------------------
 # Test report infrastructure
 # -----------------------
@@ -1704,45 +1732,55 @@ def process_pending_enrollment(req: ProcessPendingRequest):
             except Exception as e:
                 print(f"⚠️  Failed to add person to group: {e}")
         
-        # 7. Save embeddings to Supabase
+        # 7. Save embeddings to Supabase (BATCH INSERT - much faster!)
+        embedding_records = []
         for idx, embedding in enumerate(embeddings):
-            embedding_data = {
+            embedding_records.append({
                 'person_id': person_id,
                 'embedding': embedding,
                 'photo_url': final_photo_urls[idx] if idx < len(final_photo_urls) else None,
                 'quality_score': 1.0  # Could add actual quality score
-            }
-            supabase.table('face_embeddings').insert(embedding_data).execute()
+            })
         
-        print(f"✅ Saved {len(embeddings)} embeddings to Supabase")
+        if embedding_records:
+            supabase.table('face_embeddings').insert(embedding_records).execute()
         
-        # 8. Save to local cache (SQLite)
+        print(f"✅ Saved {len(embeddings)} embeddings to Supabase (batched)")
+        
+        # 8. Save to local cache (SQLite) - BATCH INSERT with executemany (much faster!)
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
-        for embedding in embeddings:
-            emb_blob = np.array(embedding, dtype=np.float32).tobytes()
-            c.execute(
-                "INSERT INTO embeddings (person_id, embedding) VALUES (?, ?)",
-                (person_id, emb_blob)
-            )
+        embedding_blobs = [
+            (person_id, np.array(embedding, dtype=np.float32).tobytes())
+            for embedding in embeddings
+        ]
+        
+        c.executemany(
+            "INSERT INTO embeddings (person_id, embedding) VALUES (?, ?)",
+            embedding_blobs
+        )
         
         conn.commit()
         conn.close()
-        print(f"✅ Saved {len(embeddings)} embeddings to local cache")
+        print(f"✅ Saved {len(embeddings)} embeddings to local cache (batched)")
         
         # 9. Update pending status to 'accepted'
         supabase.table('pending_enrollments').update({'status': 'accepted'}).eq('id', req.pending_id).execute()
         
-        # 10. Delete old pending photos from storage
+        # 10. Delete old pending photos from storage (BATCH DELETE - much faster!)
+        pending_paths_to_delete = []
         for photo_url in photo_urls:
             bucket_path = photo_url.split('/face-photos/')[-1] if '/face-photos/' in photo_url else None
             if bucket_path:
-                try:
-                    supabase.storage.from_('face-photos').remove([bucket_path])
-                    print(f"🗑️  Deleted pending photo: {bucket_path}")
-                except Exception as e:
-                    print(f"⚠️  Failed to delete pending photo: {e}")
+                pending_paths_to_delete.append(bucket_path)
+        
+        if pending_paths_to_delete:
+            try:
+                supabase.storage.from_('face-photos').remove(pending_paths_to_delete)
+                print(f"🗑️  Deleted {len(pending_paths_to_delete)} pending photos (batched)")
+            except Exception as e:
+                print(f"⚠️  Failed to delete pending photos: {e}")
         
         return {
             "success": True,

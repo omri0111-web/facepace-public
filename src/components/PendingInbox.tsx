@@ -3,6 +3,7 @@ import { supabaseDataService } from '../services/SupabaseDataService'
 import { backendRecognitionService } from '../services/BackendRecognitionService'
 import { useAuth } from '../hooks/useAuth'
 import { logger } from '../utils/logger'
+import { checkPhotoQuality, type QualityCheckResult } from '../utils/frontendQualityChecks'
 
 interface Person {
   id: string
@@ -62,12 +63,55 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
   const [loading, setLoading] = useState(true)
   const [selectedEnrollment, setSelectedEnrollment] = useState<PendingEnrollment | null>(null)
   const [processing, setProcessing] = useState(false)
+  const [selectedPhotoQuality, setSelectedPhotoQuality] = useState<QualityCheckResult[]>([])
+  const [checkingQuality, setCheckingQuality] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     if (isOpen && user) {
       loadPendingEnrollments()
     }
   }, [isOpen, user])
+
+  useEffect(() => {
+    if (selectedEnrollment && selectedEnrollment.photo_urls.length > 0) {
+      checkPendingPhotosQuality()
+    }
+  }, [selectedEnrollment])
+
+  const checkPendingPhotosQuality = async () => {
+    if (!selectedEnrollment) return
+    
+    setCheckingQuality(true)
+    const results: QualityCheckResult[] = []
+    
+    try {
+      for (const photoUrl of selectedEnrollment.photo_urls) {
+        // Fetch photo as blob
+        const response = await fetch(photoUrl)
+        const blob = await response.blob()
+        
+        // Check quality
+        const quality = await checkPhotoQuality(blob, {
+          minBrightness: 50,
+          maxBrightness: 200,
+          minContrast: 30,
+          minSharpness: 100,
+          requireFace: true,
+          minFaceSize: 0.05
+        })
+        
+        results.push(quality)
+      }
+      
+      setSelectedPhotoQuality(results)
+    } catch (error) {
+      logger.error('Failed to check photo quality', error)
+      setSelectedPhotoQuality([])
+    } finally {
+      setCheckingQuality(false)
+    }
+  }
 
   const loadPendingEnrollments = async () => {
     if (!user) return
@@ -172,72 +216,161 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
     }
   }
 
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    )
+  }
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === enrollments.length) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(enrollments.map((e) => e.id))
+    }
+  }
+
+  const handleAcceptSelected = async () => {
+    if (!user || selectedIds.length === 0) return
+    const confirmed = window.confirm(
+      `Accept ${selectedIds.length} pending enrollment(s)?`,
+    )
+    if (!confirmed) return
+
+    try {
+      setProcessing(true)
+      for (const id of selectedIds) {
+        const enrollment = enrollments.find((e) => e.id === id)
+        if (!enrollment) continue
+        await handleAcceptEnrollment(enrollment)
+      }
+      setSelectedIds([])
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-4xl sm:w-full max-h-[90vh] sm:max-h-[85vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex-shrink-0 p-4 sm:p-6 border-b border-gray-100">
-          <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4 sm:hidden"></div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-medium text-xl">Pending Enrollments</h3>
-              <p className="text-sm text-gray-600 mt-1">
-                Review and accept new people who signed up via enrollment links
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-            >
-              ✕
-            </button>
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* Header - full page like Records */}
+      <div className="flex-shrink-0 border-b border-gray-200 bg-white px-4 py-4">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={onClose}
+            className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-all duration-200 active:scale-95"
+          >
+            ←
+          </button>
+          <div className="text-center flex-1">
+            <h2 className="text-gray-900 text-xl">Pending Enrollments</h2>
+            <p className="text-gray-500 text-sm">
+              Review and accept new people from enrollment links
+            </p>
           </div>
+          <div className="w-10" />
         </div>
+      </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-blue-500"></div>
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-blue-500"></div>
+          </div>
+        ) : enrollments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="text-6xl mb-4">📭</div>
+            <h4 className="text-xl font-medium text-gray-900 mb-2">
+              No Pending Enrollments
+            </h4>
+            <p className="text-gray-600">
+              New sign-ups from enrollment links will appear here
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Bulk actions */}
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-sm text-gray-700">
+                {selectedIds.length > 0
+                  ? `${selectedIds.length} selected of ${enrollments.length}`
+                  : `${enrollments.length} pending`}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="px-3 py-1.5 text-xs rounded-full border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 transition"
+                >
+                  {selectedIds.length === enrollments.length
+                    ? 'Clear selection'
+                    : 'Select all'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAcceptSelected}
+                  disabled={selectedIds.length === 0 || processing}
+                  className="px-3 py-1.5 text-xs rounded-full bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Accept selected
+                </button>
+              </div>
             </div>
-          ) : enrollments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="text-6xl mb-4">📭</div>
-              <h4 className="text-xl font-medium text-gray-900 mb-2">No Pending Enrollments</h4>
-              <p className="text-gray-600">
-                New sign-ups from enrollment links will appear here
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {enrollments.map((enrollment) => (
+
+            {enrollments.map((enrollment) => {
+              const isSelected = selectedIds.includes(enrollment.id)
+              return (
                 <div
                   key={enrollment.id}
-                  className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow p-4 cursor-pointer"
+                  className={`bg-white border rounded-xl shadow-sm hover:shadow-md transition-shadow p-4 cursor-pointer ${
+                    isSelected ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200'
+                  }`}
                   onClick={() => setSelectedEnrollment(enrollment)}
                 >
                   <div className="flex items-start justify-between">
+                    <div className="mr-3 mt-1">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                        onChange={(e) => {
+                          e.stopPropagation()
+                          toggleSelected(enrollment.id)
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </div>
                     <div className="flex-1">
-                      <h4 className="font-medium text-lg text-gray-900">{enrollment.name}</h4>
-                      
+                      <h4 className="font-medium text-lg text-gray-900">
+                        {enrollment.name}
+                      </h4>
+
                       {enrollment.group_id && (
                         <div className="mt-1 inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                          👥 {groups.find(g => g.id === enrollment.group_id)?.name || 'Unknown Group'}
+                          👥{' '}
+                          {groups.find((g) => g.id === enrollment.group_id)?.name ||
+                            'Unknown Group'}
                         </div>
                       )}
-                      
+
                       <div className="mt-2 space-y-1 text-sm text-gray-600">
-                        {enrollment.email && (
-                          <div>📧 {enrollment.email}</div>
-                        )}
+                        {enrollment.email && <div>📧 {enrollment.email}</div>}
                         {enrollment.age && (
-                          <div>🎂 Age {enrollment.age} {enrollment.age_group && `• ${enrollment.age_group}`}</div>
+                          <div>
+                            🎂 Age {enrollment.age}{' '}
+                            {enrollment.age_group && `• ${enrollment.age_group}`}
+                          </div>
                         )}
                         {enrollment.parent_name && (
-                          <div>👨‍👩‍👧‍👦 Parent: {enrollment.parent_name} {enrollment.parent_phone && `• ${enrollment.parent_phone}`}</div>
+                          <div>
+                            👨‍👩‍👧‍👦 Parent: {enrollment.parent_name}{' '}
+                            {enrollment.parent_phone &&
+                              `• ${enrollment.parent_phone}`}
+                          </div>
                         )}
                         {enrollment.allergies && enrollment.allergies.length > 0 && (
                           <div>🏥 Allergies: {enrollment.allergies.join(', ')}</div>
@@ -263,15 +396,10 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex-shrink-0 pb-6 sm:pb-0">
-          <div className="h-6 sm:hidden"></div>
-        </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Enrollment Details Modal */}
@@ -318,6 +446,69 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
                   ))}
                 </div>
               </div>
+
+              {/* Photo Quality Summary */}
+              {selectedPhotoQuality.length > 0 && (
+                <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
+                  <div className="text-sm font-bold text-gray-900 mb-3">📊 Photo Quality Summary</div>
+                  
+                  {/* Overall Score */}
+                  <div className="mb-3 p-3 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-sm font-semibold text-gray-700">Overall Quality Score</div>
+                      <div className="text-2xl font-bold text-green-700">
+                        {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + m.score, 0) / selectedPhotoQuality.length)}/100
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      {(() => {
+                        const avgScore = Math.round(selectedPhotoQuality.reduce((sum, m) => sum + m.score, 0) / selectedPhotoQuality.length);
+                        if (avgScore >= 90) return '✅ Excellent - Ready for recognition';
+                        if (avgScore >= 75) return '✅ Good - Ready for recognition';
+                        if (avgScore >= 60) return '⚠️ Fair - Consider retaking';
+                        return '❌ Poor - Should retake photos';
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Detailed Metrics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <div className="text-blue-700 font-medium">Photos</div>
+                      <div className="text-blue-900">
+                        {selectedPhotoQuality.length} total • {selectedPhotoQuality.filter(m => m.passed).length} passing
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-blue-700 font-medium">Face Size</div>
+                      <div className="text-blue-900">
+                        Avg: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + ((m.metrics.faceSize || 0) * 640), 0) / selectedPhotoQuality.length)}px • 
+                        Min: {Math.round(Math.min(...selectedPhotoQuality.map(m => (m.metrics.faceSize || 0) * 640)))}px
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-blue-700 font-medium">Sharpness</div>
+                      <div className="text-blue-900">
+                        Avg: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + (m.metrics.sharpness || 0), 0) / selectedPhotoQuality.length)} • 
+                        Best: {Math.round(Math.max(...selectedPhotoQuality.map(m => m.metrics.sharpness || 0)))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-blue-700 font-medium">Lighting</div>
+                      <div className="text-blue-900">
+                        Bright: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + (m.metrics.brightness || 0), 0) / selectedPhotoQuality.length)} • 
+                        Contrast: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + (m.metrics.contrast || 0), 0) / selectedPhotoQuality.length)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {checkingQuality && (
+                <div className="text-center text-sm text-gray-600 py-4">
+                  ⏳ Analyzing photo quality...
+                </div>
+              )}
 
               {/* Group Info */}
               {selectedEnrollment.group_id && (

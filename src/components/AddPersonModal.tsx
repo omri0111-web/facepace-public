@@ -8,6 +8,8 @@ import { Card } from './ui/card';
 import { backendRecognitionService } from '../services/BackendRecognitionService';
 import { supabaseDataService } from '../services/SupabaseDataService';
 import { useAuth } from '../hooks/useAuth';
+import { SmartCamera } from './SmartCamera';
+import { QualityCheckResult } from '../utils/frontendQualityChecks';
 
 interface AddPersonModalProps {
   isOpen: boolean;
@@ -622,115 +624,37 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
             </div>
 
             {captureMode === 'camera' && (
-              <>
-                {/* Progress indicator */}
-                <div className="flex items-center justify-center space-x-2 mb-2">
-                  {angles.map((angle, index) => (
-                    <div
-                      key={angle.id}
-                      className={`w-3 h-3 rounded-full transition-all ${
-                        photos.length > index
-                          ? 'bg-green-500'
-                          : currentAngle === angle.id
-                          ? 'bg-blue-500 animate-pulse'
-                          : 'bg-gray-300'
-                      }`}
-                    />
-                  ))}
-                </div>
-
-                <div className="relative">
-                  <div className="w-full h-64 bg-black rounded-lg overflow-hidden">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                      onLoadedMetadata={() => setCameraReady(true)}
-                    />
-                  </div>
-                
-                  {/* Face guide overlay */}
-                  {cameraReady && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-48 h-56 border-2 border-green-400 rounded-full">
-                        <div className="absolute inset-0 border-2 border-green-400/30 rounded-full animate-ping"></div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Instructions overlay */}
-                  {cameraReady && (
-                    <div className="absolute top-4 left-4 right-4">
-                      <div className="bg-black/70 text-white px-3 py-2 rounded-lg text-center">
-                        <div className="flex items-center justify-center space-x-2 mb-1">
-                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                          <span className="text-sm font-medium">
-                            {angles.find(a => a.id === currentAngle)?.emoji} {angles.find(a => a.id === currentAngle)?.name}
-                          </span>
-                        </div>
-                        <div className="text-xs font-medium text-yellow-300">
-                          {angles.find(a => a.id === currentAngle)?.instruction}
-                        </div>
-                        <div className="text-xs text-white/70 mt-1">
-                          Photo {photos.length + 1} of {angles.length}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {!cameraReady && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                      <div className="text-white text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-                        <div className="text-sm">Starting camera...</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Photo gallery - Fixed height to prevent jumping */}
-                <div className="min-h-[120px]">
-                  {photos.length > 0 && (
-                    <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                      <div className="text-xs font-medium text-green-700 mb-2 flex items-center justify-between">
-                        <span>✅ Accepted Photos ({photos.length}/{angles.length})</span>
-                        <span className="text-green-600 text-xs">All photos passed quality check!</span>
-                      </div>
-                      <div className="grid grid-cols-4 gap-2">
-                        {photos.map((photo, index) => (
-                          <div key={index} className="relative">
-                            <img
-                              src={photo.dataURL}
-                              alt={`Photo ${index + 1}`}
-                              className="w-full h-20 object-cover rounded-lg border-2 border-green-500"
-                            />
-                            <div className="absolute top-0 right-0 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-bl">
-                              ✓
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="text-xs text-blue-800">
-                    <strong>📋 Photo must pass quality check to be saved:</strong>
-                    <ul className="list-disc list-inside mt-1 space-y-1">
-                      <li><strong>Get VERY close</strong> - Face should fill most of the oval guide</li>
-                      <li><strong>Bright light on face</strong> - Stand facing a window or lamp</li>
-                      <li><strong>Hold camera steady</strong> - Wait a moment before clicking</li>
-                      <li><strong>Face camera straight</strong> - Minimal head tilt</li>
-                    </ul>
-                    <div className="mt-2 text-xs text-blue-700 font-medium">
-                      ⚡ If rejected, photo won't count - you can retry immediately!
-                    </div>
-                  </div>
-                </div>
-              </>
+              <SmartCamera
+                isOpen={true}
+                inline={true}
+                photoCount={photos.length}
+                targetCount={4}
+                photoMetrics={photos.map(p => p.qualityCheck).filter((q): q is QualityCheckResult => q !== null && q !== undefined)}
+                instruction={angles.find(a => a.id === currentAngle)?.instruction || "Look straight at the camera"}
+                onCancel={() => setCaptureMode('upload')}
+                onComplete={() => {
+                  // User finished taking photos, stay in camera mode to show gallery
+                }}
+                onPhotoCaptured={(blob, quality) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    const dataURL = reader.result as string;
+                    const newPhoto = {
+                      dataURL,
+                      qualityCheck: quality,
+                      checking: false
+                    };
+                    setPhotos(prev => [...prev, newPhoto]);
+                    
+                    // Advance angle
+                    const currentIndex = angles.findIndex(a => a.id === currentAngle);
+                    if (currentIndex < angles.length - 1) {
+                      setCurrentAngle(angles[currentIndex + 1].id as any);
+                    }
+                  };
+                  reader.readAsDataURL(blob);
+                }}
+              />
             )}
 
             {captureMode === 'upload' && (
@@ -841,24 +765,14 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                 Cancel
               </Button>
               {captureMode === 'camera' ? (
-                photos.length >= angles.length ? (
-                  <Button 
-                    onClick={startEnrollment}
-                    disabled={photos.length < 3}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={photos.length < 3 ? `Need at least 3 photos (currently ${photos.length})` : ''}
-                  >
-                    🚀 Start Enrollment ({photos.length} photos)
-                  </Button>
-                ) : (
-                  <Button 
-                    onClick={captureCurrentAngle}
-                    disabled={!cameraReady || photos.length >= angles.length}
-                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50"
-                  >
-                    📸 Take Shot ({Math.min(photos.length + 1, angles.length)}/{angles.length})
-                  </Button>
-                )
+                <Button 
+                  onClick={startEnrollment}
+                  disabled={photos.length < 3}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={photos.length < 3 ? `Need at least 3 photos (currently ${photos.length})` : ''}
+                >
+                  🚀 Start Enrollment ({photos.length} photos)
+                </Button>
               ) : (
                 <Button 
                   onClick={startEnrollment}
