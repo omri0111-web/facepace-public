@@ -1,5 +1,5 @@
-import { supabase } from '../lib/supabase'
-import type { Person, Group } from '../types'
+import { supabase } from '@/lib/supabase'
+import type { Person, Group } from '@/types'
 
 // Supabase table row types that are only used in this service
 export interface FaceEmbedding {
