@@ -1,12 +1,6 @@
 {
-  "buildCommand": "vite build --config vite.config.public.ts",
+  "buildCommand": "npm run build",
   "outputDirectory": "build",
   "framework": "vite",
-  "installCommand": "npm install",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
+  "installCommand": "npm install"
 }
