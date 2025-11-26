@@ -455,7 +455,9 @@ export function GroupsPanel({
   const generateJoinLink = (groupId?: string) => {
     if (!user?.id) return '';
     const targetGroupId = groupId || selectedGroup?.id || '';
-    return `${window.location.origin}/enroll/${user.id}/${targetGroupId}`;
+    // Use Vercel URL for production enrollment links
+    const baseUrl = 'https://facepace-public.vercel.app';
+    return `${baseUrl}/enroll/${user.id}/${targetGroupId}`;
   };
 
   const copyJoinLink = (groupId?: string) => {

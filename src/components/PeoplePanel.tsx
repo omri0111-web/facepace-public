@@ -617,7 +617,8 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
   };
 
   const generateJoinLink = () => {
-    const baseUrl = window.location.origin;
+    // Use Vercel URL for production enrollment links
+    const baseUrl = 'https://facepace-public.vercel.app';
     const linkId = Math.random().toString(36).substring(2, 15);
     return `${baseUrl}/join/${linkId}`;
   };
