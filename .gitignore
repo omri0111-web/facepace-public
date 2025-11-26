@@ -75,4 +75,19 @@ backend/seeta/lib/
 
 # Temporary files
 *.tmp
-*.temp.npm-cache/
+*.temp
+.npm-cache/
+
+# Environment and local config
+.env
+.env.local
+
+# Large demo/test files
+faces/
+demos/
+banuba_extract_temp/
+unity_banuba_service/
+backend/test_reports/
+FacePace Public/
+*.dylib
+*.unitypackage
