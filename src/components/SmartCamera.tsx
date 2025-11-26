@@ -14,6 +14,7 @@ interface SmartCameraProps {
   instruction?: string;
   inline?: boolean;
   photoMetrics?: QualityCheckResult[]; // Track all photo quality results
+  personDetails?: { label: string; value: string }[]; // Optional person details to review
 }
 
 export function SmartCamera({ 
@@ -25,7 +26,8 @@ export function SmartCamera({
   isOpen,
   instruction = "Face should fill this oval",
   inline = false,
-  photoMetrics = []
+  photoMetrics = [],
+  personDetails = []
 }: SmartCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -104,6 +106,51 @@ export function SmartCamera({
     }
   };
 
+  /**
+   * Capture a single frame from the video, run frontend quality checks,
+   * and return both the blob and the QualityCheckResult.
+   */
+  const captureAndEvaluateFrame = useCallback(async (): Promise<{ blob: Blob; result: QualityCheckResult }> => {
+    if (!videoRef.current) {
+      throw new Error('Video not ready');
+    }
+
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not create canvas context');
+
+    // Draw video frame to canvas (mirrored)
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error('Failed to capture frame'));
+      }, 'image/jpeg', 0.95);
+    });
+
+    // Strict capture requirements (frontend gate before backend):
+    // - Brighter, but not overexposed
+    // - Strong contrast & sharpness
+    // - Face must be quite large in the frame
+    const result = await checkPhotoQuality(blob, {
+      minBrightness: 70,
+      maxBrightness: 180,
+      minContrast: 35,
+      minSharpness: 170, // slightly stricter than before for crisper photos
+      requireFace: true,
+      minFaceSize: 0.32, // Face should fill most of the oval
+    });
+
+    return { blob, result };
+  }, []);
+
   const handleCapture = async () => {
     if (!videoRef.current || isChecking || photoCount >= targetCount) return;
 
@@ -120,52 +167,43 @@ export function SmartCamera({
     setTimeout(() => setFlash(false), 200);
 
     try {
-      const video = videoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not create canvas context');
-      
-      // Draw video frame to canvas
-      // Mirror the image if using front camera (standard UX)
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(video, 0, 0);
-      
-      // Convert to blob
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          setIsChecking(false);
-          return;
+      // Capture multiple frames in a short window and keep the sharpest one.
+      const attempts = 3;
+      let best: { blob: Blob; result: QualityCheckResult } | null = null;
+
+      for (let i = 0; i < attempts; i++) {
+        const current = await captureAndEvaluateFrame();
+
+        if (!best || current.result.score > best.result.score) {
+          best = current;
         }
 
-        // Check quality
-        const result = await checkPhotoQuality(blob, {
-          minBrightness: 60,
-          minSharpness: 80,
-          requireFace: true,
-          minFaceSize: 0.05 // Face should be reasonably large
-        });
-        
-        setLastResult(result);
+        // Small delay between frames to avoid capturing the exact same moment
+        if (i < attempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 70));
+        }
+      }
+
+      if (!best) {
         setIsChecking(false);
+        return;
+      }
 
-        if (result.passed) {
-          // Small delay to show success message before callback
-          setTimeout(() => {
-            onPhotoCaptured(blob, result);
-            setLastResult(null); // Reset for next photo
-          }, 1500);
-        } else {
-          // Reset after error display
-          setTimeout(() => {
-            setLastResult(null);
-          }, 2500);
-        }
-      }, 'image/jpeg', 0.95);
-      
+      setLastResult(best.result);
+      setIsChecking(false);
+
+      if (best.result.passed) {
+        // Small delay to show success message before callback
+        setTimeout(() => {
+          onPhotoCaptured(best!.blob, best!.result);
+          setLastResult(null); // Reset for next photo
+        }, 1500);
+      } else {
+        // Reset after error display
+        setTimeout(() => {
+          setLastResult(null);
+        }, 2500);
+      }
     } catch (err) {
       console.error('Error capturing photo:', err);
       setIsChecking(false);
@@ -179,12 +217,14 @@ export function SmartCamera({
     setIsChecking(true);
     setLastResult(null);
 
-    // Process uploaded file
+    // Process uploaded file with the same strict capture requirements
     checkPhotoQuality(file, {
-      minBrightness: 60,
-      minSharpness: 80,
+      minBrightness: 70,
+      maxBrightness: 180,
+      minContrast: 35,
+      minSharpness: 170,
       requireFace: true,
-      minFaceSize: 0.05
+      minFaceSize: 0.32,
     }).then(result => {
       setLastResult(result);
       setIsChecking(false);
@@ -195,6 +235,10 @@ export function SmartCamera({
           setLastResult(null);
         }, 1500);
       }
+    }).catch(err => {
+      console.error('Error checking file:', err);
+      setIsChecking(false);
+      setError('Could not check photo quality. Please try another.');
     });
   };
 
@@ -226,12 +270,18 @@ export function SmartCamera({
           </div>
         ) : (
           <>
+            <style>{`
+              .mirror-video-smart {
+                transform: scaleX(-1) !important;
+                -webkit-transform: scaleX(-1) !important;
+              }
+            `}</style>
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-cover transform scale-x-[-1]" // Mirror effect
+              className="mirror-video-smart absolute inset-0 w-full h-full object-cover"
             />
             
             {/* Guide Overlay */}
@@ -297,7 +347,25 @@ export function SmartCamera({
               )}
             </div>
 
-            {/* Bottom Controls Bar - Simplified (No capture button here) */}
+            {/* Floating Capture Counter - Enhanced Animation */}
+            <div className="absolute top-4 left-0 right-0 flex justify-center pointer-events-none z-30">
+              <div className="relative">
+                <div
+                  className={cn(
+                    "bg-blue-600/90 text-white px-5 py-2 rounded-full text-2xl font-extrabold tracking-wide shadow-2xl transition-all duration-300",
+                    photoCount < targetCount && "scale-110 animate-pulse"
+                  )}
+                >
+                  {Math.min(photoCount, targetCount)} / {targetCount}
+                </div>
+                {/* Pulse ring effect */}
+                {photoCount < targetCount && (
+                  <div className="absolute inset-0 rounded-full border-2 border-blue-400 animate-ping opacity-75"></div>
+                )}
+              </div>
+            </div>
+
+          {/* Bottom Controls Bar */}
             <div className="absolute bottom-0 left-0 right-0 p-4 pb-6 bg-gradient-to-t from-black/90 via-black/30 to-transparent flex items-center justify-between">
               <Button 
                 variant="ghost" 
@@ -311,17 +379,8 @@ export function SmartCamera({
               {/* Spacer for center alignment */}
               <div className="w-12"></div>
 
-              {/* Right Side Controls */}
+            {/* Right Side Controls (upload only - finish is handled by big round button on the right panel) */}
               <div className="flex items-center gap-4">
-                {onComplete && photoCount >= targetCount && (
-                  <Button
-                    onClick={onComplete}
-                    className="bg-green-500 hover:bg-green-600 text-white rounded-full px-6 h-12 font-medium shadow-lg shadow-green-500/20"
-                  >
-                    Done ({photoCount})
-                  </Button>
-                )}
-                
                 <div className="relative">
                   <input
                     type="file"
@@ -357,36 +416,43 @@ export function SmartCamera({
           : "w-full md:w-80 h-auto md:h-full shrink-0 flex flex-col border-t md:border-t-0 md:border-l"
       )}>
         <div className="p-2 flex-1 overflow-y-auto min-h-0 custom-scrollbar">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h2 className="text-xs font-bold text-gray-900">📸 Take Photo</h2>
-              <p className="text-[9px] text-gray-500">{instruction || `Photo ${Math.min(photoCount + 1, targetCount)} of ${targetCount}`}</p>
-            </div>
-            <div className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold">
-              {Math.min(photoCount, targetCount)} / {targetCount}
-            </div>
+              {/* Instruction */}
+          <div className="flex flex-col items-center mb-3">
+            <p className="mt-2 text-base font-bold text-gray-900 text-center animate-pulse tracking-tight">
+              {instruction || `Look straight at the camera`}
+            </p>
           </div>
 
-          {/* Capture Button - Prominent & Cool */}
+          {/* Capture / Finish Button - matches public UI, with stronger boundary and 3D effect */}
           <div className="mb-2 flex justify-center -mt-4 relative z-30">
-            <div className="p-1 rounded-full bg-white shadow-lg">
-              <button
-                onClick={handleCapture}
-                disabled={isChecking || !!lastResult || photoCount >= targetCount}
-                className={cn(
-                  "w-16 h-16 rounded-full border-[5px] flex items-center justify-center transition-all duration-300 focus:outline-none active:scale-95 shadow-inner",
-                  (isChecking || lastResult || photoCount >= targetCount) 
-                    ? "border-gray-200 bg-gray-100 cursor-not-allowed" 
-                    : "border-blue-500 bg-white hover:border-blue-400 hover:shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                )}
-              >
-                <div className={cn(
-                  "w-12 h-12 rounded-full transition-all duration-300",
-                  (isChecking || lastResult || photoCount >= targetCount) 
-                    ? "bg-gray-300 scale-90" 
-                    : "bg-blue-500 scale-90 hover:scale-100"
-                )} />
-              </button>
+            <div className="p-1.5 rounded-full bg-gradient-to-br from-blue-50 via-white to-blue-100 shadow-[0_10px_40px_rgba(59,130,246,0.4)] border border-blue-200">
+              {photoCount >= targetCount && onComplete ? (
+                <button
+                  onClick={onComplete}
+                  disabled={false}
+                  className={cn(
+                    "w-20 h-20 rounded-full border-[6px] flex items-center justify-center transition-all duration-300 focus:outline-none active:scale-95 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.1),0_4px_8px_rgba(0,0,0,0.1)] active:shadow-inner transform hover:-translate-y-0.5",
+                    "border-green-500 bg-gradient-to-b from-white to-green-50 hover:border-green-400 hover:shadow-[0_0_30px_rgba(34,197,94,0.6)]" 
+                  )}
+                >
+                  <span className="text-green-600 font-bold text-sm">Finish</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleCapture}
+                  disabled={isChecking || !!lastResult}
+                  className={cn(
+                    "w-20 h-20 rounded-full border-[6px] flex items-center justify-center transition-all duration-300 focus:outline-none active:scale-95 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.1),0_4px_8px_rgba(0,0,0,0.1)] active:shadow-inner transform hover:-translate-y-0.5",
+                    (isChecking || lastResult) 
+                      ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-80" 
+                      : "border-blue-500 bg-gradient-to-b from-white to-blue-50 hover:border-blue-400 hover:shadow-[0_0_30px_rgba(59,130,246,0.6)]"
+                  )}
+                >
+                  <span className="text-blue-600 font-bold text-sm drop-shadow-sm">
+                    {isChecking || lastResult ? 'Checking…' : 'Take photo'}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -411,48 +477,6 @@ export function SmartCamera({
                 <span><strong>Hold steady</strong> - Avoid blur</span>
               </div>
             </div>
-          </div>
-
-          {/* Photo Quality Summary - Always visible to prevent layout shift */}
-          <div className="bg-white rounded-lg border-2 border-gray-200 p-2 mb-2">
-            <div className="text-[10px] font-bold text-gray-900 mb-1.5">📊 Quality Summary</div>
-            
-            {photoMetrics && photoMetrics.length > 0 ? (
-              <>
-                {/* Overall Score */}
-                <div className="mb-1.5 p-1.5 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200">
-                  <div className="flex items-center justify-between">
-                    <div className="text-[10px] font-medium text-gray-700">Score</div>
-                    <div className="text-base font-bold text-green-700">
-                      {Math.round(photoMetrics.reduce((sum, m) => sum + m.score, 0) / photoMetrics.length)}/100
-                    </div>
-                  </div>
-                  <div className="text-[9px] text-gray-600">
-                    {photoMetrics.filter(m => m.passed).length}/{photoMetrics.length} passed
-                  </div>
-                </div>
-
-                {/* Detailed Metrics */}
-                <div className="grid grid-cols-2 gap-1.5 text-[9px]">
-                  <div className="bg-gray-50 p-1 rounded">
-                    <div className="text-gray-600 font-medium">Brightness</div>
-                    <div className="text-gray-900 font-bold">
-                      {Math.round(photoMetrics.reduce((sum, m) => sum + (m.metrics.brightness || 0), 0) / photoMetrics.length)}
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 p-1 rounded">
-                    <div className="text-gray-600 font-medium">Sharpness</div>
-                    <div className="text-gray-900 font-bold">
-                      {Math.round(photoMetrics.reduce((sum, m) => sum + (m.metrics.sharpness || 0), 0) / photoMetrics.length)}
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-3 text-gray-400 text-[10px]">
-                Take photos to see quality metrics
-              </div>
-            )}
           </div>
 
           {/* Warning */}

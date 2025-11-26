@@ -1,5 +1,26 @@
 import { supabase } from '../lib/supabase'
-import type { Person, Group, GroupMember, FaceEmbedding, EnrollmentLink } from '../lib/supabase'
+import type { Person, Group } from '../types'
+
+// Supabase table row types that are only used in this service
+export interface FaceEmbedding {
+  id: string
+  person_id: string
+  embedding: number[]
+  photo_url: string
+  quality_score?: number | null
+  created_at?: string
+}
+
+export interface EnrollmentLink {
+  id: string
+  link_code: string
+  user_id: string
+  group_id?: string | null
+  expires_at?: string | null
+  max_uses?: number | null
+  used_count?: number
+  created_at?: string
+}
 
 /**
  * SupabaseDataService handles all data CRUD operations via Supabase
@@ -350,11 +371,13 @@ class SupabaseDataService {
         'updateGroup: no Supabase row updated for group, returning local updates only',
         { groupId, updates },
       )
-      // Fallback: return a merged object so callers can still update UI state
+      // Fallback: return a merged object so callers can still update UI state.
+      // Ensure the caller-provided id (if any) does not override the real groupId.
+      const { id: _ignoredId, ...rest } = updates as Group
       return {
         id: groupId,
-        ...(updates as Group),
-      }
+        ...(rest as Omit<Group, 'id'>),
+      } as Group
     }
 
     return data

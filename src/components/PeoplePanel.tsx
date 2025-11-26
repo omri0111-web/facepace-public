@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Dispatch, SetStateAction } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
@@ -13,6 +13,8 @@ import { supabaseDataService } from '../services/SupabaseDataService';
 import { syncService } from '../services/SyncService';
 import { useAuth } from '../hooks/useAuth';
 import { logger } from '../utils/logger';
+import { computeBackendQualitySummary, scoreSinglePhoto, type BackendPhotoMetrics } from '../utils/backendQualityScoring';
+import { LocalStorageService } from '../services/LocalStorageService';
 
 // Helper function to get person's photo URL for avatar
 const getPersonPhotoUrl = (person: Person): string => {
@@ -68,11 +70,15 @@ interface PeoplePanelProps {
   isOpen: boolean;
   onClose: () => void;
   people: Person[];
-  setPeople: (people: Person[]) => void;
+  setPeople: React.Dispatch<React.SetStateAction<Person[]>>;
   groups: Group[];
-  setGroups: (groups: Group[]) => void;
+  setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
   onShowPersonDetails?: (person: Person) => void;
 }
+
+const MAX_PERSON_PHOTOS = 4;
+const MIN_ACCEPTABLE_PHOTO_SCORE = 70;
+const DEFAULT_UPLOAD_LABEL = 'לא נבחר קובץ';
 
 export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGroups, onShowPersonDetails }: PeoplePanelProps) {
   const { user } = useAuth();
@@ -93,10 +99,119 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
     passed: boolean;
   }}>({});
   const [uploadNotes, setUploadNotes] = useState<string[]>([]);
+  const [uploadSelectionLabel, setUploadSelectionLabel] = useState(DEFAULT_UPLOAD_LABEL);
   const [showPhotoCamera, setShowPhotoCamera] = useState(false);
   const [photoCameraStream, setPhotoCameraStream] = useState<MediaStream | null>(null);
   const photoCameraVideoRef = useRef<HTMLVideoElement>(null);
-  
+  const pendingPersonUpdateRef = useRef<Person | null>(null);
+  const [cameraSessionCount, setCameraSessionCount] = useState(0);
+  const [cameraSessionTarget, setCameraSessionTarget] = useState(1);
+  const currentPhotoCount = editingPhotos?.photoPaths?.length || 0;
+  const remainingSlots = Math.max(0, MAX_PERSON_PHOTOS - currentPhotoCount);
+  const canAddMorePhotos = remainingSlots > 0;
+
+  const appendUploadNote = useCallback((message: string) => {
+    setUploadNotes(prev => [message, ...prev].slice(0, 5));
+  }, []);
+
+  const persistPeopleUpdate = useCallback((updater: (prev: Person[]) => Person[]) => {
+    setPeople(prev => {
+      const updated = updater(prev);
+      if (user) {
+        LocalStorageService.savePeople(updated, user.id);
+      }
+      return updated;
+    });
+  }, [setPeople, user]);
+
+  type PersonUpdateInput = Person | ((prev: Person) => Person);
+
+  const applyPersonUpdate = useCallback((updater: PersonUpdateInput) => {
+    setEditingPhotos(prev => {
+      if (!prev) return prev;
+      const nextPerson = typeof updater === 'function' ? (updater as (prev: Person) => Person)(prev) : updater;
+      pendingPersonUpdateRef.current = nextPerson;
+      return nextPerson;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!pendingPersonUpdateRef.current) return;
+    const nextPerson = pendingPersonUpdateRef.current;
+    pendingPersonUpdateRef.current = null;
+    persistPeopleUpdate(existing => existing.map(p => (p.id === nextPerson.id ? nextPerson : p)));
+  }, [editingPhotos, persistPeopleUpdate]);
+
+  const stopPhotoCamera = useCallback(() => {
+    if (photoCameraStream) {
+      photoCameraStream.getTracks().forEach(track => track.stop());
+    }
+    setPhotoCameraStream(null);
+    setShowPhotoCamera(false);
+    setCameraSessionCount(0);
+    setCameraSessionTarget(1);
+  }, [photoCameraStream]);
+
+  const derivePhotoScore = useCallback((quality: { score?: number; metrics?: any; passed: boolean }): number => {
+    if (typeof (quality as any)?.score === 'number') {
+      return Math.round((quality as any).score);
+    }
+
+    const metrics = quality.metrics || {};
+    const backendMetrics: BackendPhotoMetrics = {
+      faceWidthPx: metrics.face_width_px ?? metrics.faceWidthPx ?? (metrics.faceSize ? metrics.faceSize * 640 : 0),
+      sharpness: metrics.sharpness ?? 0,
+      brightness: metrics.brightness ?? 0,
+      contrast: metrics.contrast ?? 0,
+      passed: quality.passed,
+    };
+
+    return scoreSinglePhoto(backendMetrics);
+  }, []);
+
+  const resolveStoragePath = useCallback((path: string) => {
+    if (!path) return '';
+    let normalized = path;
+    if (normalized.includes('/face-photos/')) {
+      normalized = normalized.split('/face-photos/')[1];
+    }
+    normalized = normalized.replace(/^https?:\/\/[^?]+?\//, '');
+    normalized = normalized.replace(/^face-photos\//, '');
+    normalized = normalized.split('?')[0];
+    if (!normalized.includes('/') && user && editingPhotos?.id) {
+      normalized = `${user.id}/${editingPhotos.id}/${normalized || path}`;
+    }
+    return normalized || path;
+  }, [user, editingPhotos?.id]);
+
+  const getPhotoDisplayUrl = useCallback(async (photoPath: string) => {
+    if (!photoPath) return '';
+    const trimmed = photoPath.trim();
+    const looksLikeBackendPath = trimmed.includes('/person/photo/') || !trimmed.includes('/');
+
+    if (looksLikeBackendPath) {
+      let personId = editingPhotos?.id || '';
+      let filename = trimmed;
+
+      if (trimmed.includes('/person/photo/')) {
+        const parts = trimmed.split('/person/photo/')[1]?.split('/');
+        if (parts && parts.length >= 2) {
+          personId = parts[0] || personId;
+          filename = parts.slice(1).join('/') || filename;
+        }
+      }
+
+      if (!personId) {
+        return backendRecognitionService.getPersonPhotoUrl(editingPhotos?.id || '', filename);
+      }
+
+      return backendRecognitionService.getPersonPhotoUrl(personId, filename);
+    }
+
+    const normalizedPath = resolveStoragePath(trimmed);
+    return await supabaseDataService.getPersonPhotoSignedUrl(normalizedPath);
+  }, [editingPhotos?.id, resolveStoragePath]);
+
   // Advanced filters
   const [showFilters, setShowFilters] = useState(false);
   const [ageFilter, setAgeFilter] = useState({ min: '', max: '' });
@@ -124,6 +239,8 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
       setPhotoQualityMetrics({});
       setUploadNotes([]);
       setSignedPhotoUrls({});
+      setUploadSelectionLabel(DEFAULT_UPLOAD_LABEL);
+      stopPhotoCamera();
       return;
     }
     
@@ -134,12 +251,13 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
     // Load signed URLs and quality metrics
     const loadPhotosAndMetrics = async () => {
       try {
-        // First, get signed URLs for all photos (authenticated access)
-        const signedUrls = await supabaseDataService.getPersonPhotosSignedUrls(editingPhotos.photoPaths!);
-        const urlMap: {[key: string]: string} = {};
-        editingPhotos.photoPaths!.forEach((publicUrl, index) => {
-          urlMap[publicUrl] = signedUrls[index];
-        });
+        const urlEntries = await Promise.all(
+          editingPhotos.photoPaths!.map(async (path) => {
+            const displayUrl = await getPhotoDisplayUrl(path);
+            return [path, displayUrl] as const;
+          })
+        );
+        const urlMap: {[key: string]: string} = Object.fromEntries(urlEntries);
         setSignedPhotoUrls(urlMap);
         
         // Then load quality metrics for photos that don't have them yet
@@ -209,7 +327,7 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
     };
     
     loadPhotosAndMetrics();
-  }, [editingPhotos?.id, editingPhotos?.photoPaths?.join(',')]);
+  }, [editingPhotos?.id, editingPhotos?.photoPaths?.join(','), getPhotoDisplayUrl]);
 
   // Sync selectedPerson with people prop changes
   // Only update if the person was deleted, not on every change
@@ -850,39 +968,19 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                           roll_abs: number | null;
                           passed: boolean;
                         }>;
-                        const widths = allMetrics.map(m => m.face_width_px);
-                        const sharpness = allMetrics.map(m => m.sharpness);
-                        const brightness = allMetrics.map(m => m.brightness);
-                        const contrast = allMetrics.map(m => m.contrast);
-                        const passedCount = allMetrics.filter(m => m.passed).length;
-                        const totalPhotos = editingPhotos.photoPaths.length;
-                        
-                        // Calculate overall quality score (0-100)
-                        // Combine multiple factors
-                        const avgWidth = widths.reduce((a, b) => a + b, 0) / widths.length;
-                        const minWidth = Math.min(...widths);
-                        const avgSharpness = sharpness.reduce((a, b) => a + b, 0) / sharpness.length;
-                        const avgBrightness = brightness.reduce((a, b) => a + b, 0) / brightness.length;
-                        const avgContrast = contrast.reduce((a, b) => a + b, 0) / contrast.length;
-                        
-                        // Face size score (0-25): min width matters most
-                        const sizeScore = Math.min(25, (minWidth / 160) * 25); // 160px = 100% of size score
-                        
-                        // Sharpness score (0-25): threshold is 100, good is 200+
-                        const sharpnessScore = Math.min(25, (avgSharpness / 200) * 25);
-                        
-                        // Brightness score (0-15): ideal is 130 (middle of 60-200)
-                        const brightnessScore = avgBrightness < 60 || avgBrightness > 200 
-                          ? 0 
-                          : Math.min(15, 15 - Math.abs(avgBrightness - 130) / 130 * 15);
-                        
-                        // Contrast score (0-10): threshold is 30, good is 50+
-                        const contrastScore = Math.min(10, (avgContrast / 50) * 10);
-                        
-                        // Pass rate score (0-25): based on how many photos pass
-                        const passRateScore = (passedCount / totalPhotos) * 25;
-                        
-                        const overallScore = Math.round(sizeScore + sharpnessScore + brightnessScore + contrastScore + passRateScore);
+
+                        const photos: BackendPhotoMetrics[] = allMetrics.map(m => ({
+                          faceWidthPx: m.face_width_px || 0,
+                          sharpness: m.sharpness || 0,
+                          brightness: m.brightness || 0,
+                          contrast: m.contrast || 0,
+                          passed: m.passed,
+                        }));
+
+                        const summary = computeBackendQualitySummary(photos);
+                        const overallScore = summary.overallScore;
+                        const bestScore = summary.bestPhotoScore;
+                        const avgScore = summary.avgPhotoScore;
                         const scoreColor = overallScore >= 80 ? 'text-green-700' : overallScore >= 60 ? 'text-yellow-700' : 'text-red-700';
                         const scoreBg = overallScore >= 80 ? 'bg-green-100' : overallScore >= 60 ? 'bg-yellow-100' : 'bg-red-100';
                         
@@ -891,13 +989,19 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                             {/* Overall Quality Score */}
                             <div className={`mb-3 p-3 rounded-lg ${scoreBg} border-2 ${overallScore >= 80 ? 'border-green-300' : overallScore >= 60 ? 'border-yellow-300' : 'border-red-300'}`}>
                               <div className="flex items-center justify-between">
-                                <div className="text-sm font-semibold text-gray-700">Overall Quality Score</div>
-                                <div className={`text-2xl font-bold ${scoreColor}`}>{overallScore}/100</div>
+                                <div className="text-sm font-semibold text-gray-700">Overall Quality</div>
+                                <div className={`text-right ${scoreColor}`}>
+                                  <div className="text-xs font-medium text-gray-600">Best / Avg</div>
+                                  <div className="text-2xl font-bold">
+                                    {Math.round(bestScore)}/100&nbsp;
+                                    <span className="text-sm text-gray-700">({Math.round(avgScore)}/100)</span>
+                                  </div>
+                                </div>
                               </div>
                               <div className="text-xs text-gray-600 mt-1">
-                                {overallScore >= 80 ? '✅ Excellent - Ready for recognition' : 
-                                 overallScore >= 60 ? '⚠️ Good - Consider adding more photos' : 
-                                 '❌ Needs improvement - Add better quality photos'}
+                                {overallScore >= 80 ? '✅ Excellent data for recognition' : 
+                                 overallScore >= 60 ? '⚠️ Good but could be improved with better photos' : 
+                                 '❌ Needs improvement - Replace the lowest-scoring photos'}
                               </div>
                             </div>
                             
@@ -905,19 +1009,19 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                               <div>
                                 <div className="text-blue-700 font-medium">Photos</div>
-                                <div className="text-blue-900">{totalPhotos} total • {passedCount} passing</div>
+                                <div className="text-blue-900">{summary.totalPhotos} total • {summary.passedCount} passing</div>
                               </div>
                               <div>
                                 <div className="text-blue-700 font-medium">Face Size</div>
-                                <div className="text-blue-900">Avg: {Math.round(avgWidth)}px • Min: {Math.round(minWidth)}px</div>
+                                <div className="text-blue-900">Avg: {Math.round(summary.avgWidthPx)}px • Min: {Math.round(summary.minWidthPx)}px</div>
                               </div>
                               <div>
                                 <div className="text-blue-700 font-medium">Sharpness</div>
-                                <div className="text-blue-900">Avg: {Math.round(avgSharpness)} • Best: {Math.round(Math.max(...sharpness))}</div>
+                                <div className="text-blue-900">Avg: {Math.round(summary.avgSharpness)} • Best: {Math.round(summary.bestSharpness)}</div>
                               </div>
                               <div>
                                 <div className="text-blue-700 font-medium">Lighting</div>
-                                <div className="text-blue-900">Bright: {Math.round(avgBrightness)} • Contrast: {Math.round(avgContrast)}</div>
+                                <div className="text-blue-900">Bright: {Math.round(summary.avgBrightness)} • Contrast: {Math.round(summary.avgContrast)}</div>
                               </div>
                             </div>
                           </>
@@ -934,50 +1038,48 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
 
               {/* Current Photos Gallery - Reserve space to prevent jumps */}
               <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3">Current Photos ({editingPhotos.photoPaths?.length || 0})</h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium">Current Photos ({editingPhotos.photoPaths?.length || 0})</h4>
+                {/* View‑only: auto‑clean controls removed */}
+              </div>
                 <div className="grid grid-cols-2 gap-4 min-h-[100px]">
                   {editingPhotos.photoPaths && editingPhotos.photoPaths.length > 0 ? (
-                    editingPhotos.photoPaths.map((photoPath, index) => (
-                      <div key={index} className="relative aspect-square">
-                        <img
-                          src={signedPhotoUrls[photoPath] || photoPath}
-                          alt={`Photo ${index + 1}`}
-                          className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
-                        />
-                        {photoQualityMetrics[photoPath] && (
-                          <div className={`absolute bottom-1 left-1 text-white text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                            photoQualityMetrics[photoPath].passed ? 'bg-green-600' : 'bg-red-600'
-                          }`}>
-                            {photoQualityMetrics[photoPath].passed ? '✓' : '✗'}
-                          </div>
-                        )}
-                        <Button
-                          onClick={async () => {
-                            if (!confirm('Delete this photo?')) return;
-                            try {
-                              await backendRecognitionService.deletePersonPhoto(editingPhotos.id, photoPath);
-                              const updatedPhotoPaths = editingPhotos.photoPaths?.filter((_, i) => i !== index) || [];
-                              const updatedPerson = { ...editingPhotos, photoPaths: updatedPhotoPaths };
-                              setEditingPhotos(updatedPerson);
-                              setPeople(people.map(p => p.id === editingPhotos.id ? updatedPerson : p));
-                              // Remove metrics from state
-                              setPhotoQualityMetrics(prev => {
-                                const newMetrics = { ...prev };
-                                delete newMetrics[photoPath];
-                                return newMetrics;
-                              });
-                            } catch (error) {
-                              logger.error('Failed to delete photo', error);
-                            }
-                          }}
-                          variant="destructive"
-                          size="sm"
-                          className="absolute top-1 right-1 h-7 w-7 p-0 text-white font-bold"
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                    ))
+                    editingPhotos.photoPaths.map((photoPath, index) => {
+                      const metrics = photoQualityMetrics[photoPath];
+                      let perPhotoScore: number | null = null;
+                      if (metrics) {
+                        const photoMetrics: BackendPhotoMetrics = {
+                          faceWidthPx: metrics.face_width_px || 0,
+                          sharpness: metrics.sharpness || 0,
+                          brightness: metrics.brightness || 0,
+                          contrast: metrics.contrast || 0,
+                          passed: metrics.passed,
+                        };
+                        perPhotoScore = scoreSinglePhoto(photoMetrics);
+                      }
+
+                      return (
+                        <div key={index} className="relative aspect-square">
+                          <img
+                            src={signedPhotoUrls[photoPath] || photoPath}
+                            alt={`Photo ${index + 1}`}
+                            className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
+                          />
+                          {metrics && perPhotoScore !== null && (
+                            <div className="absolute inset-0 flex items-end justify-end pointer-events-none">
+                              <div
+                                className={`mb-1 mr-1 text-white text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                  perPhotoScore >= 60 ? 'bg-green-600' : 'bg-red-600'
+                                }`}
+                              >
+                                {perPhotoScore}/100
+                              </div>
+                            </div>
+                          )}
+                          {/* View‑only: per‑photo delete button removed */}
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="col-span-8 text-center py-8 text-gray-500">
                       No photos yet. Add some below!
@@ -986,179 +1088,7 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
                 </div>
               </div>
 
-              {/* Add New Photo */}
-              <div className="border-t pt-6">
-                {!showPhotoCamera ? (
-                  <>
-                    <h4 className="text-sm font-medium mb-3">Add New Photos</h4>
-                    
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                  {/* Upload Photo Button */}
-                  <label className="cursor-pointer">
-                    <div className="flex items-center justify-center h-12 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
-                      📤 Upload Photos
-                    </div>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={async (e) => {
-                        const files = e.target.files;
-                        if (!files || files.length === 0) return;
-
-                        for (const file of Array.from(files) as File[]) {
-                          try {
-                            const reader = new FileReader();
-                            reader.onload = async (event) => {
-                              const imageDataUrl = event.target?.result as string;
-                              
-                              // Validate photo quality
-                              const quality = await backendRecognitionService.scorePhotoQuality(imageDataUrl);
-                              if (!quality.passed) {
-                                // Record rejection note
-                                setUploadNotes(prev => [
-                                  `Rejected: ${[...(quality.reasons||[])].join('; ')}`,
-                                  ...prev
-                                ].slice(0,5));
-                                return;
-                              }
-                              // Accepted note
-                              setUploadNotes(prev => [
-                                `Accepted (width ${Math.round(quality.metrics?.face_width_px||0)}px, sharp ${Math.round(quality.metrics?.sharpness||0)})`,
-                                ...prev
-                              ].slice(0,5));
-                              
-                              // Upload photo
-                              const result = await backendRecognitionService.uploadPersonPhoto(editingPhotos.id, imageDataUrl);
-                              
-                              // Store full quality metrics
-                              setPhotoQualityMetrics(prev => ({
-                                ...prev,
-                                [result.filename]: {
-                                  face_width_px: quality.metrics?.face_width_px || 0,
-                                  sharpness: quality.metrics?.sharpness || 0,
-                                  brightness: quality.metrics?.brightness || 0,
-                                  contrast: quality.metrics?.contrast || 0,
-                                  roll_abs: quality.metrics?.roll_abs || null,
-                                  passed: quality.passed
-                                }
-                              }));
-                              
-                              // Update local state
-                              const updatedPhotoPaths = [...(editingPhotos.photoPaths || []), result.filename];
-                              const updatedPerson = { ...editingPhotos, photoPaths: updatedPhotoPaths };
-                              setEditingPhotos(updatedPerson);
-                              setPeople(people.map(p => p.id === editingPhotos.id ? updatedPerson : p));
-                            };
-                            reader.readAsDataURL(file);
-                          } catch (error) {
-                            logger.error('Failed to upload photo', error);
-                            setUploadNotes(prev => ['Failed to upload photo. Please try again.', ...prev].slice(0,5));
-                          }
-                        }
-                        
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-
-                  {/* Take Photo Button */}
-                  <Button
-                    onClick={async () => {
-                      setShowPhotoCamera(true);
-                      try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-                        setPhotoCameraStream(stream);
-                        if (photoCameraVideoRef.current) {
-                          photoCameraVideoRef.current.srcObject = stream;
-                        }
-                      } catch (error) {
-                        logger.error('Failed to start camera', error);
-                        alert('Could not access camera');
-                        setShowPhotoCamera(false);
-                      }
-                    }}
-                    className="h-12 bg-green-500 hover:bg-green-600"
-                  >
-                    📷 Take Photo
-                  </Button>
-                </div>
-                
-                    <p className="text-xs text-gray-600">
-                      💡 Tip: Upload multiple photos from different angles for better face recognition accuracy. Photos are scored 0-100 for quality.
-                    </p>
-                  </>
-                ) : (
-                  <SmartCamera
-                    isOpen={true}
-                    photoCount={editingPhotos.photoPaths?.length || 0}
-                    onCancel={() => setShowPhotoCamera(false)}
-                    onPhotoCaptured={async (blob, quality) => {
-                      try {
-                        // Convert blob to base64 for upload
-                        const reader = new FileReader();
-                        reader.readAsDataURL(blob);
-                        reader.onloadend = async () => {
-                          const imageDataUrl = reader.result as string;
-                          
-                          setUploadNotes(prev => [
-                            `Accepted (score: ${Math.round(quality.score)})`,
-                            ...prev
-                          ].slice(0,5));
-                          
-                          // Upload photo
-                          const result = await backendRecognitionService.uploadPersonPhoto(editingPhotos.id, imageDataUrl);
-                          
-                          // Store full quality metrics
-                          setPhotoQualityMetrics(prev => ({
-                            ...prev,
-                            [result.filename]: {
-                              face_width_px: quality.metrics.faceSize ? quality.metrics.faceSize * 640 : 0, // Estimate
-                              sharpness: quality.metrics.sharpness || 0,
-                              brightness: quality.metrics.brightness || 0,
-                              contrast: quality.metrics.contrast || 0,
-                              roll_abs: null,
-                              passed: quality.passed
-                            }
-                          }));
-                          
-                          // Update local state
-                          const updatedPhotoPaths = [...(editingPhotos.photoPaths || []), result.filename];
-                          const updatedPerson = { ...editingPhotos, photoPaths: updatedPhotoPaths };
-                          setEditingPhotos(updatedPerson);
-                          setPeople(people.map(p => p.id === editingPhotos.id ? updatedPerson : p));
-                          
-                          // Don't close camera immediately to allow multiple photos
-                          // But the SmartCamera UI might need a "Next" or "Done" trigger?
-                          // For now, let's keep it open or close it? 
-                          // The user said "Photo 1 of 4", implying a flow.
-                          // But here we are in "Manage Photos", adding one by one.
-                          // Let's keep it open for flow, or maybe close it?
-                          // User request: "make sure the taking pic button is not moving at all... nicely flow"
-                          // I'll keep it open so they can take another one if they want.
-                          // But I should probably give feedback in the camera itself. 
-                          // The SmartCamera handles its own success feedback.
-                        };
-                      } catch (error) {
-                        logger.error('Failed to upload photo', error);
-                        setUploadNotes(prev => ['Failed to upload photo', ...prev].slice(0,5));
-                      }
-                    }}
-                  />
-                )}
-              </div>
-
-              {/* Recent quality notes - Reserve space to prevent layout jump */}
-              <div className="mt-3 min-h-[60px]">
-                {uploadNotes.length > 0 && (
-                  <div className="text-xs text-gray-800 bg-yellow-50 border border-yellow-200 p-2 rounded">
-                    {uploadNotes.map((n,i)=>(
-                      <div key={i}>• {n}</div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {/* View‑only: Add / upload / camera actions and notes removed */}
 
               <div className="flex justify-end mt-6">
                 <Button onClick={() => setEditingPhotos(null)} className="px-6">

@@ -4,6 +4,7 @@ import { backendRecognitionService } from '../services/BackendRecognitionService
 import { useAuth } from '../hooks/useAuth'
 import { logger } from '../utils/logger'
 import { checkPhotoQuality, type QualityCheckResult } from '../utils/frontendQualityChecks'
+import { computeBackendQualitySummary, scoreSinglePhoto, type BackendPhotoMetrics, type BackendQualitySummary } from '../utils/backendQualityScoring'
 
 interface Person {
   id: string
@@ -67,6 +68,16 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
   const [checkingQuality, setCheckingQuality] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
+  // Backend quality summary for currently selected enrollment (mirrors PeoplePanel)
+  const [backendQualitySummary, setBackendQualitySummary] = useState<BackendQualitySummary | null>(null)
+  const [checkingBackendQuality, setCheckingBackendQuality] = useState(false)
+  // Per‑photo backend metrics (aligned by index with selectedEnrollment.photo_urls)
+  const [backendPerPhotoMetrics, setBackendPerPhotoMetrics] = useState<BackendPhotoMetrics[]>([])
+
+  // Minimum backend-derived overall score we require before accepting an enrollment
+  // (we also require a minimum number of strong individual photos separately)
+  const BACKEND_MIN_OVERALL_SCORE = 60
+
   useEffect(() => {
     if (isOpen && user) {
       loadPendingEnrollments()
@@ -76,6 +87,23 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
   useEffect(() => {
     if (selectedEnrollment && selectedEnrollment.photo_urls.length > 0) {
       checkPendingPhotosQuality()
+      ;(async () => {
+        try {
+          setCheckingBackendQuality(true)
+          const { summary, perPhotoMetrics } = await checkBackendQualityForEnrollment(selectedEnrollment)
+          setBackendQualitySummary(summary)
+          setBackendPerPhotoMetrics(perPhotoMetrics)
+        } catch (err) {
+          logger.error('Failed to load backend quality summary for pending enrollment', err)
+          setBackendQualitySummary(null)
+          setBackendPerPhotoMetrics([])
+        } finally {
+          setCheckingBackendQuality(false)
+        }
+      })()
+    } else {
+      setBackendQualitySummary(null)
+      setBackendPerPhotoMetrics([])
     }
   }, [selectedEnrollment])
 
@@ -91,15 +119,8 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
         const response = await fetch(photoUrl)
         const blob = await response.blob()
         
-        // Check quality
-        const quality = await checkPhotoQuality(blob, {
-          minBrightness: 50,
-          maxBrightness: 200,
-          minContrast: 30,
-          minSharpness: 100,
-          requireFace: true,
-          minFaceSize: 0.05
-        })
+        // Check quality using the same unified function/thresholds as SmartCamera
+        const quality = await checkPhotoQuality(blob)
         
         results.push(quality)
       }
@@ -111,6 +132,66 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
     } finally {
       setCheckingQuality(false)
     }
+  }
+
+  /**
+   * Run backend quality check (same engine used in People -> Manage Photos)
+   * and compute an overall score similar to PeoplePanel.
+   * Returns both the summary and per‑photo metrics (in the same order as photo_urls).
+   */
+  const checkBackendQualityForEnrollment = async (
+    enrollment: PendingEnrollment
+  ): Promise<{ summary: BackendQualitySummary; perPhotoMetrics: BackendPhotoMetrics[] }> => {
+    const photoUrls = enrollment.photo_urls || []
+    if (photoUrls.length === 0) {
+      return {
+        summary: computeBackendQualitySummary([]),
+        perPhotoMetrics: [],
+      }
+    }
+
+    const photos: BackendPhotoMetrics[] = []
+
+    for (const publicUrl of photoUrls) {
+      try {
+        // Load image
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve()
+          img.onerror = () => reject(new Error('Failed to load image'))
+          img.src = publicUrl
+        })
+
+        // Draw to canvas and convert to base64
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width
+        canvas.height = img.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) continue
+
+        ctx.drawImage(img, 0, 0)
+        const dataURL = canvas.toDataURL('image/jpeg', 0.9)
+
+        // Ask backend for quality metrics
+        const quality = await backendRecognitionService.scorePhotoQuality(dataURL)
+
+        photos.push({
+          faceWidthPx: quality.metrics?.face_width_px || 0,
+          sharpness: quality.metrics?.sharpness || 0,
+          brightness: quality.metrics?.brightness || 0,
+          contrast: quality.metrics?.contrast || 0,
+          passed: quality.passed,
+        })
+      } catch (err) {
+        // Skip any photo that fails to load or score
+        logger.warning('Failed backend quality check for photo', { url: publicUrl, err })
+      }
+    }
+
+    const summary = computeBackendQualitySummary(photos)
+    return { summary, perPhotoMetrics: photos }
   }
 
   const loadPendingEnrollments = async () => {
@@ -134,15 +215,110 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
     try {
       setProcessing(true)
       logger.system(`Processing enrollment for ${enrollment.name}...`)
+
+      // 1) Check backend quality first so Inbox decisions match PeoplePanel
+      try {
+        const { summary: qualitySummary, perPhotoMetrics } = await checkBackendQualityForEnrollment(enrollment)
+
+        if (qualitySummary.totalPhotos === 0) {
+          alert('No photos found for this enrollment. Please ask for new photos.')
+          setProcessing(false)
+          return
+        }
+
+        // Compute how many photos are truly \"strong\" for recognition (score >= 60)
+        const STRONG_THRESHOLD = 60
+        const strongPhotoCount =
+          perPhotoMetrics.length > 0
+            ? perPhotoMetrics
+                .map((m) => scoreSinglePhoto(m))
+                .filter((s) => s >= STRONG_THRESHOLD).length
+            : 0
+
+        // Require at least 2 strong photos and a reasonable overall score
+        if (strongPhotoCount < 2 || qualitySummary.overallScore < BACKEND_MIN_OVERALL_SCORE) {
+          alert(
+            `Backend quality score is ${qualitySummary.overallScore}/100 with ` +
+              `${qualitySummary.passedCount}/${qualitySummary.totalPhotos} photos scoring at least 60, and ` +
+              `${strongPhotoCount} photos scoring at least ${STRONG_THRESHOLD}.\n\n` +
+              `To accept, you need at least 2 strong photos (score ≥ ${STRONG_THRESHOLD}) ` +
+              `and an overall score of at least ${BACKEND_MIN_OVERALL_SCORE}/100.\n\n` +
+              `Please ask for better / clearer photos before accepting.`
+          )
+          setProcessing(false)
+          return
+        }
+      } catch (err) {
+        logger.error('Backend quality check failed before accepting enrollment', err)
+        // If backend quality fails, be safe and do not accept automatically
+        alert('Could not verify photo quality with backend. Please try again later.')
+        setProcessing(false)
+        return
+      }
       
-      // Call backend to process the pending enrollment
-      // Backend will: download photos, generate embeddings, create person in Supabase,
-      // save embeddings to Supabase + local cache, add to group if specified
+      // 2) Call backend to process the pending enrollment
+      //    Backend will: download photos, generate embeddings, create person in Supabase,
+      //    save embeddings to Supabase + local cache, add to group if specified
       const response = await backendRecognitionService.processPendingEnrollment(enrollment.id)
       
       logger.success(`Backend processed enrollment: ${JSON.stringify(response)}`)
       
       // Create person object for local state
+      let finalPhotoUrls: string[] = response.photo_urls || []
+
+      // 2b) Auto‑clean low‑quality photos using the same backend scoring
+      //     logic as PeoplePanel so that, by the time the person appears
+      //     there, they already have only good photos.
+      try {
+        const perPhotoMetrics: BackendPhotoMetrics[] =
+          // When accepting from the modal, we may already have metrics
+          backendPerPhotoMetrics.length === (response.photo_urls || []).length
+            ? backendPerPhotoMetrics
+            : []
+
+        // If we don't have metrics from state (e.g. accepted from list),
+        // fall back to re‑checking this specific enrollment.
+        let metricsToUse = perPhotoMetrics
+        if (metricsToUse.length === 0 && (response.photo_urls || []).length > 0) {
+          const qualityResult = await checkBackendQualityForEnrollment(enrollment)
+          metricsToUse = qualityResult.perPhotoMetrics
+        }
+
+        if (metricsToUse.length === (response.photo_urls || []).length && metricsToUse.length > 0) {
+          // Photos below this score are considered too weak and will be dropped
+          const lowScoreThreshold = 60
+          const goodUrls: string[] = []
+          const badUrls: string[] = []
+
+          ;(response.photo_urls || []).forEach((url: string, idx: number) => {
+            const metric = metricsToUse[idx]
+            const score = scoreSinglePhoto(metric)
+            if (score < lowScoreThreshold) {
+              badUrls.push(url)
+            } else {
+              goodUrls.push(url)
+            }
+          })
+
+          // Delete bad photos from Supabase (storage, persons.photo_paths, and embeddings)
+          if (badUrls.length > 0 && user) {
+            for (const badUrl of badUrls) {
+              try {
+                await supabaseDataService.deletePersonPhoto(user.id, response.person_id, badUrl)
+              } catch (err) {
+                logger.warning('Failed to auto-delete low quality photo after enrollment', { badUrl, err })
+              }
+            }
+          }
+
+          if (goodUrls.length > 0) {
+            finalPhotoUrls = goodUrls
+          }
+        }
+      } catch (err) {
+        logger.warning('Auto-cleaning low-quality photos after enrollment failed; keeping all photos', err)
+      }
+
       const newPerson: Person = {
         id: response.person_id,
         name: enrollment.name,
@@ -152,7 +328,7 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
         parentName: enrollment.parent_name || '',
         parentPhone: enrollment.parent_phone || '',
         allergies: enrollment.allergies || [],
-        photoPaths: response.photo_urls || [],
+        photoPaths: finalPhotoUrls,
         status: 'unknown' as const,
         guides: [],
         groups: response.group_id ? [response.group_id] : []
@@ -432,42 +608,63 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
               <div>
                 <h4 className="font-medium text-gray-900 mb-3">Photos ({selectedEnrollment.photo_urls.length})</h4>
                 <div className="grid grid-cols-2 gap-3">
-                  {selectedEnrollment.photo_urls.map((url, index) => (
-                    <div key={index} className="relative aspect-square">
-                      <img
-                        src={url}
-                        alt={`Photo ${index + 1}`}
-                        className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
-                      />
-                      <div className="absolute top-2 left-2 bg-black/60 text-white px-2 py-1 rounded text-xs">
-                        Photo {index + 1}
+                  {selectedEnrollment.photo_urls.map((url, index) => {
+                    const backendMetrics = backendPerPhotoMetrics[index]
+                    const perPhotoScore =
+                      backendMetrics !== undefined ? scoreSinglePhoto(backendMetrics) : null
+
+                    return (
+                      <div key={index} className="relative aspect-square">
+                        <img
+                          src={url}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
+                        />
+                        <div className="absolute top-2 left-2 bg-black/60 text-white px-2 py-1 rounded text-xs z-10 pointer-events-none">
+                          Photo {index + 1}
+                        </div>
+                        {perPhotoScore !== null && (
+                          <div
+                            className={`absolute bottom-2 right-2 text-white text-[11px] px-2 py-0.5 rounded font-semibold z-10 pointer-events-none ${
+                              perPhotoScore >= BACKEND_MIN_OVERALL_SCORE ? 'bg-green-600' : 'bg-red-600'
+                            }`}
+                          >
+                            {perPhotoScore}/100
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 
-              {/* Photo Quality Summary */}
-              {selectedPhotoQuality.length > 0 && (
+              {/* Photo Quality Summary – always based on backend metrics so it matches Mailbox decisions */}
+              {backendQualitySummary && (
                 <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
                   <div className="text-sm font-bold text-gray-900 mb-3">📊 Photo Quality Summary</div>
                   
                   {/* Overall Score */}
                   <div className="mb-3 p-3 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300">
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-sm font-semibold text-gray-700">Overall Quality Score</div>
-                      <div className="text-2xl font-bold text-green-700">
-                        {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + m.score, 0) / selectedPhotoQuality.length)}/100
+                      <div className="text-sm font-semibold text-gray-700">Overall Quality</div>
+                      <div className="text-right text-green-700">
+                        <div className="text-xs font-medium text-gray-600">Best / Avg</div>
+                        <div className="text-2xl font-bold">
+                          {Math.round(backendQualitySummary.bestPhotoScore)}/100{' '}
+                          <span className="text-sm text-gray-700">
+                            ({Math.round(backendQualitySummary.avgPhotoScore)}/100)
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="text-xs text-gray-600">
-                      {(() => {
-                        const avgScore = Math.round(selectedPhotoQuality.reduce((sum, m) => sum + m.score, 0) / selectedPhotoQuality.length);
-                        if (avgScore >= 90) return '✅ Excellent - Ready for recognition';
-                        if (avgScore >= 75) return '✅ Good - Ready for recognition';
-                        if (avgScore >= 60) return '⚠️ Fair - Consider retaking';
-                        return '❌ Poor - Should retake photos';
-                      })()}
+                      {backendQualitySummary.overallScore >= 90
+                        ? '✅ Excellent - Ready for recognition'
+                        : backendQualitySummary.overallScore >= 70
+                        ? '✅ Good - Ready for recognition'
+                        : backendQualitySummary.overallScore >= 60
+                        ? '⚠️ Fair - Consider retaking'
+                        : '❌ Poor - Should retake photos'}
                     </div>
                   </div>
 
@@ -476,35 +673,41 @@ export function PendingInbox({ isOpen, onClose, people, setPeople, groups, setGr
                     <div>
                       <div className="text-blue-700 font-medium">Photos</div>
                       <div className="text-blue-900">
-                        {selectedPhotoQuality.length} total • {selectedPhotoQuality.filter(m => m.passed).length} passing
+                        {backendQualitySummary.totalPhotos} total • {backendQualitySummary.passedCount} passing
                       </div>
                     </div>
                     <div>
                       <div className="text-blue-700 font-medium">Face Size</div>
                       <div className="text-blue-900">
-                        Avg: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + ((m.metrics.faceSize || 0) * 640), 0) / selectedPhotoQuality.length)}px • 
-                        Min: {Math.round(Math.min(...selectedPhotoQuality.map(m => (m.metrics.faceSize || 0) * 640)))}px
+                        <>
+                          Avg: {Math.round(backendQualitySummary.avgWidthPx)}px •{' '}
+                          Min: {Math.round(backendQualitySummary.minWidthPx)}px
+                        </>
                       </div>
                     </div>
                     <div>
                       <div className="text-blue-700 font-medium">Sharpness</div>
                       <div className="text-blue-900">
-                        Avg: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + (m.metrics.sharpness || 0), 0) / selectedPhotoQuality.length)} • 
-                        Best: {Math.round(Math.max(...selectedPhotoQuality.map(m => m.metrics.sharpness || 0)))}
+                        <>
+                          Avg: {Math.round(backendQualitySummary.avgSharpness)} •{' '}
+                          Best: {Math.round(backendQualitySummary.bestSharpness)}
+                        </>
                       </div>
                     </div>
                     <div>
                       <div className="text-blue-700 font-medium">Lighting</div>
                       <div className="text-blue-900">
-                        Bright: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + (m.metrics.brightness || 0), 0) / selectedPhotoQuality.length)} • 
-                        Contrast: {Math.round(selectedPhotoQuality.reduce((sum, m) => sum + (m.metrics.contrast || 0), 0) / selectedPhotoQuality.length)}
+                        <>
+                          Bright: {Math.round(backendQualitySummary.avgBrightness)} •{' '}
+                          Contrast: {Math.round(backendQualitySummary.avgContrast)}
+                        </>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {checkingQuality && (
+              {(checkingQuality || checkingBackendQuality) && (
                 <div className="text-center text-sm text-gray-600 py-4">
                   ⏳ Analyzing photo quality...
                 </div>

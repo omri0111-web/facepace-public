@@ -3,8 +3,7 @@
  * Manages offline caching of people and groups data
  */
 
-import { Person } from '../types/person';
-import { Group } from '../types/group';
+import type { Person, Group } from '../App';
 
 const STORAGE_KEYS = {
   PEOPLE: 'facepace_people',

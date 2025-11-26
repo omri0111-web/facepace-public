@@ -50,6 +50,12 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
   }
 
   const handleCameraComplete = () => {
+    // When SmartCamera finishes (4 photos captured), go to review screen
+    if (capturedPhotos.length < 4) {
+      setError('Please capture at least 4 photos')
+      return
+    }
+    setError('')
     setStep('review')
   }
 
@@ -101,7 +107,7 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
       
     } catch (err: any) {
       console.error('❌ Enrollment submission error:', err)
-      setError('Failed to submit enrollment: ' + err.message)
+      setError('Could not save your info. Please try again.')
       setSubmitting(false)
     }
   }
@@ -111,12 +117,9 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
           <div className="text-6xl mb-4">✅</div>
-          <h1 className="text-2xl font-bold text-green-600 mb-4">Enrollment Submitted!</h1>
+          <h1 className="text-2xl font-bold text-green-600 mb-4">You&apos;re all set!</h1>
           <p className="text-gray-600 mb-4">
-            Thank you, {name}! Your enrollment has been submitted successfully.
-          </p>
-          <p className="text-gray-500 text-sm mb-4">
-            Your submission is now pending review. You'll be notified once it's approved.
+            Thank you, {name}! Your details and photos have been saved.
           </p>
           <p className="text-gray-400 text-xs">
             You can close this page now.
@@ -136,6 +139,14 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
         instruction={angles.find(a => a.id === currentAngle)?.instruction || "Look straight at the camera"}
         onCancel={() => setStep('details')} // Go back to details if cancelled
         onComplete={handleCameraComplete}
+        personDetails={[
+          { label: 'Name', value: name },
+          { label: 'Email', value: email },
+          { label: 'Age', value: age },
+          { label: 'Grade', value: ageGroup },
+          { label: 'Parent', value: parentName },
+          { label: 'Phone', value: parentPhone },
+        ].filter(detail => detail.value && detail.value.trim().length > 0)}
         onPhotoCaptured={(blob, quality) => {
           const reader = new FileReader()
           reader.onloadend = () => {
@@ -164,7 +175,9 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
             Join Face<span className="text-blue-500">Pace</span>
           </h1>
           <p className="text-gray-600">
-            {step === 'review' ? 'Review your enrollment' : 'Complete the form below to enroll'}
+            {step === 'review'
+              ? 'Check your details before you finish'
+              : 'Complete the form below to set up face sign-in'}
           </p>
         </div>
 
@@ -317,6 +330,47 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
               </div>
             )}
 
+            {/* Person Details Review (Summary) */}
+            <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 text-sm">
+              <h4 className="font-semibold text-gray-900 mb-3">Your Details</h4>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-gray-600">
+                <div>
+                  <dt className="font-medium text-gray-700">Name</dt>
+                  <dd>{name}</dd>
+                </div>
+                {email && (
+                  <div>
+                    <dt className="font-medium text-gray-700">Email</dt>
+                    <dd>{email}</dd>
+                  </div>
+                )}
+                {age && (
+                  <div>
+                    <dt className="font-medium text-gray-700">Age</dt>
+                    <dd>{age}</dd>
+                  </div>
+                )}
+                {ageGroup && (
+                  <div>
+                    <dt className="font-medium text-gray-700">Grade</dt>
+                    <dd>{ageGroup}</dd>
+                  </div>
+                )}
+                {parentName && (
+                  <div>
+                    <dt className="font-medium text-gray-700">Parent</dt>
+                    <dd>{parentName}</dd>
+                  </div>
+                )}
+                {parentPhone && (
+                  <div>
+                    <dt className="font-medium text-gray-700">Phone</dt>
+                    <dd>{parentPhone}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+
             <div className="flex space-x-3">
               <button
                 onClick={() => setStep('camera')}
@@ -343,7 +397,7 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
                     Submitting...
                   </>
                 ) : (
-                  'Complete Enrollment'
+                  'Finish setup'
                 )}
               </button>
             </div>
@@ -359,3 +413,5 @@ export function PublicEnrollmentPage({ userId, groupId }: PublicEnrollmentPagePr
     </div>
   )
 }
+
+

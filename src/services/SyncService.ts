@@ -117,10 +117,20 @@ class SyncService {
     const currentGroups = LocalStorageService.loadGroups(userId) || []
     const existingIndex = currentGroups.findIndex(g => g.id === group.id)
     
+    // Normalize group to ensure all required fields are present
+    const normalizedGroup = {
+      ...group,
+      description: group.description ?? '',
+      memberCount: group.memberCount ?? (group.members?.length ?? 0),
+      capacity: group.capacity ?? 30,
+      isActive: group.isActive ?? true,
+      members: group.members ?? [],
+    }
+    
     if (existingIndex >= 0) {
-      currentGroups[existingIndex] = group
+      currentGroups[existingIndex] = normalizedGroup
     } else {
-      currentGroups.push(group)
+      currentGroups.push(normalizedGroup)
     }
     
     LocalStorageService.saveGroups(currentGroups, userId)
@@ -268,8 +278,10 @@ class SyncService {
       )
 
       // Sync people from Supabase
-      const supabasePeople = await supabaseDataService.fetchPeople(userId)
-      const mergedPeople = supabasePeople.map(supabasePerson => {
+      // Note: Supabase returns snake_case data, but fetchPeople is typed as Person[]
+      // We need to cast to any to access snake_case properties
+      const supabasePeople = await supabaseDataService.fetchPeople(userId) as any[]
+      const mergedPeople = supabasePeople.map((supabasePerson: any) => {
         // Check if we have a pending update for this person
         const pendingChange = this.pendingChanges.find(
           c => c.entity === 'person' && c.id === supabasePerson.id && c.type === 'update'
@@ -302,11 +314,13 @@ class SyncService {
       })
 
       // Sync groups from Supabase
-      const supabaseGroups = await supabaseDataService.fetchGroups(userId)
-      const groupIds = supabaseGroups.map(g => g.id)
+      // Note: Supabase returns snake_case data, but fetchGroups is typed as Group[]
+      // We need to cast to any to access snake_case properties
+      const supabaseGroups = await supabaseDataService.fetchGroups(userId) as any[]
+      const groupIds = supabaseGroups.map((g: any) => g.id)
       const membersByGroup = await supabaseDataService.fetchAllGroupMembers(groupIds)
       
-      const mergedGroups = supabaseGroups.map(supabaseGroup => {
+      const mergedGroups = supabaseGroups.map((supabaseGroup: any) => {
         // Check if we have a pending update for this group
         const pendingChange = this.pendingChanges.find(
           c => c.entity === 'group' && c.id === supabaseGroup.id && c.type === 'update'
