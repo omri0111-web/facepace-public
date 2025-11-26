@@ -38,6 +38,11 @@ export function SmartCamera({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
 
+  // Detect if user is on mobile device
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  // Mobile devices need stricter face size requirements due to wider camera FOV
+  const minFaceSize = isMobile ? 0.38 : 0.32;
+
   // Initialize camera when component mounts or isOpen changes
   useEffect(() => {
     if (isOpen) {
@@ -145,7 +150,7 @@ export function SmartCamera({
       minContrast: 35,
       minSharpness: 170, // slightly stricter than before for crisper photos
       requireFace: true,
-      minFaceSize: 0.32, // Face should fill most of the oval
+      minFaceSize: minFaceSize, // Stricter on mobile (0.38) vs desktop (0.32)
     });
 
     return { blob, result };
@@ -224,7 +229,7 @@ export function SmartCamera({
       minContrast: 35,
       minSharpness: 170,
       requireFace: true,
-      minFaceSize: 0.32,
+      minFaceSize: minFaceSize, // Stricter on mobile (0.38) vs desktop (0.32)
     }).then(result => {
       setLastResult(result);
       setIsChecking(false);
