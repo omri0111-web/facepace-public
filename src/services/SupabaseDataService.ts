@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase.ts'
 import type { Person, Group } from '@/types'
 
 // Supabase table row types that are only used in this service
