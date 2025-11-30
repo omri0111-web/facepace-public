@@ -7,7 +7,43 @@
  * 
  * Performs client-side validation of photos before sending to backend.
  * This allows for immediate user feedback without server round-trips.
+ * 
+ * Uses face-api.js (MIT license) for accurate ML-based face detection.
  */
+
+import * as faceapi from 'face-api.js';
+
+// Track if models are loaded
+let modelsLoaded = false;
+let modelsLoading: Promise<void> | null = null;
+
+/**
+ * Load face-api.js models (TinyFaceDetector)
+ * Models are loaded once and cached.
+ */
+async function loadFaceModels(): Promise<void> {
+  if (modelsLoaded) return;
+  
+  // If already loading, wait for that to complete
+  if (modelsLoading) {
+    await modelsLoading;
+    return;
+  }
+  
+  modelsLoading = (async () => {
+    try {
+      // Load TinyFaceDetector model from public/models/
+      await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+      modelsLoaded = true;
+      console.log('✅ Face detection models loaded');
+    } catch (error) {
+      console.error('❌ Failed to load face detection models:', error);
+      throw error;
+    }
+  })();
+  
+  await modelsLoading;
+}
 
 export interface QualityCheckResult {
   passed: boolean;
@@ -24,7 +60,19 @@ export interface QualityCheckResult {
     sharpness?: number;
     faceDetected?: boolean;
     /**
-     * Approximate fraction of the image covered by face/skin pixels (0–1)
+     * Face width in pixels (from ML detection)
+     */
+    faceWidthPx?: number;
+    /**
+     * Face height in pixels (from ML detection)
+     */
+    faceHeightPx?: number;
+    /**
+     * Face detection confidence (0-1)
+     */
+    faceConfidence?: number;
+    /**
+     * @deprecated Use faceWidthPx instead. Kept for backwards compatibility.
      */
     faceSize?: number;
   };
@@ -36,6 +84,18 @@ export interface QualityOptions {
   minContrast?: number;
   minSharpness?: number;
   requireFace?: boolean;
+  /**
+   * Minimum face width in pixels (default: 150)
+   * This ensures the face crop has enough detail for recognition.
+   */
+  minFaceWidthPx?: number;
+  /**
+   * Minimum face height in pixels (default: 150)
+   */
+  minFaceHeightPx?: number;
+  /**
+   * @deprecated Use minFaceWidthPx instead. Kept for backwards compatibility.
+   */
   minFaceSize?: number;
 }
 
@@ -129,79 +189,98 @@ function calculateSharpness(imageData: ImageData): number {
 }
 
 /**
- * Simple face detection using skin tone detection
- * This is a basic heuristic - for better results, use MediaPipe Face Detection
+ * ML-based face detection using face-api.js TinyFaceDetector
+ * Returns face bounding box in pixels for accurate size measurement.
  */
-function detectFace(
-  imageData: ImageData
-): { detected: boolean; confidence: number; size: number } {
-  const { width, height, data } = imageData;
-
-  // Focus only on the central region where we expect the face to be
-  const startX = Math.floor(width * 0.2);
-  const endX = Math.ceil(width * 0.8);
-  const startY = Math.floor(height * 0.2);
-  const endY = Math.ceil(height * 0.8);
-
-  let skinPixels = 0;
-  const totalPixels = (endX - startX) * (endY - startY);
-  
-  for (let y = startY; y < endY; y++) {
-    for (let x = startX; x < endX; x++) {
-      const idx = (y * width + x) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
+async function detectFaceML(
+  img: HTMLImageElement
+): Promise<{ 
+  detected: boolean; 
+  confidence: number; 
+  widthPx: number; 
+  heightPx: number;
+  // Bounding box for face crop
+  box?: { x: number; y: number; width: number; height: number };
+  // For backwards compatibility
+  size: number;
+}> {
+  try {
+    // Ensure models are loaded
+    await loadFaceModels();
     
-      // Simple skin tone detection heuristic
-      if (
-        r > 95 &&
-        g > 40 &&
-        b > 20 &&
-        r > g &&
-        r > b &&
-        Math.abs(r - g) > 15 &&
-        Math.max(r, g, b) - Math.min(r, g, b) > 15
-      ) {
-        skinPixels++;
-      }
+    // Run face detection
+    const detection = await faceapi.detectSingleFace(
+      img,
+      new faceapi.TinyFaceDetectorOptions({ 
+        inputSize: 320,      // Smaller = faster, 320 is good balance
+        scoreThreshold: 0.5  // Confidence threshold
+      })
+    );
+    
+    if (!detection) {
+      return { 
+        detected: false, 
+        confidence: 0, 
+        widthPx: 0, 
+        heightPx: 0,
+        size: 0 
+      };
     }
+    
+    const { x, y, width, height } = detection.box;
+    
+    // Calculate size as fraction of image area (for backwards compatibility)
+    const faceArea = width * height;
+    const imageArea = img.width * img.height;
+    const size = imageArea > 0 ? faceArea / imageArea : 0;
+    
+    return {
+      detected: true,
+      confidence: detection.score,
+      widthPx: width,
+      heightPx: height,
+      box: { x, y, width, height },
+      size,
+    };
+  } catch (error) {
+    console.error('Face detection error:', error);
+    // Return no face detected on error
+    return { 
+      detected: false, 
+      confidence: 0, 
+      widthPx: 0, 
+      heightPx: 0,
+      size: 0 
+    };
   }
-  
-  const skinRatio = totalPixels > 0 ? skinPixels / totalPixels : 0;
-  
-  return {
-    // Require a stronger skin presence in the center to count as a face
-    detected: skinRatio > 0.18,
-    confidence: Math.min(skinRatio * 10, 1),
-    size: skinRatio,
-  };
 }
 
 /**
  * Main unified photo quality check used everywhere in the app.
- * These defaults are chosen to be strict-but-achievable for kids.
+ * Uses ML-based face detection for accurate face size measurement.
  */
 export async function checkPhotoQuality(
   imageBlob: Blob,
   options: QualityOptions = {}
 ): Promise<QualityCheckResult> {
-  // Default thresholds – tweak here to tune strictness globally
+  // Default thresholds
   const {
-    minBrightness = 50,
+    minBrightness = 90,
     maxBrightness = 200,
-    minContrast = 30,
-    minSharpness = 100,
+    minContrast = 35,
+    minSharpness = 100, // Lowered from 170 - was too strict for typical phone cameras
     requireFace = true,
-    // With the tighter central-region face detection, require a larger face area
-    minFaceSize = 0.14,
+    // Minimum face size in pixels for good recognition
+    // 300px ensures maximum detail for best recognition accuracy
+    minFaceWidthPx = 300,
+    minFaceHeightPx = 300,
   } = options;
   
   return new Promise((resolve) => {
     const img = new Image();
     const url = URL.createObjectURL(imageBlob);
     
-    img.onload = () => {
+    img.onload = async () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
@@ -217,52 +296,102 @@ export async function checkPhotoQuality(
         return;
       }
       
-      // Resize to manageable size for performance
-      const maxDimension = 640;
-      const scale =
-        Math.min(1, maxDimension / Math.max(img.width, img.height)) || 1;
+      // Use full resolution for face detection (better accuracy)
+      // but limit to 1280 for performance
+      const maxDimension = 1280;
+      const scale = Math.min(1, maxDimension / Math.max(img.width, img.height)) || 1;
       canvas.width = img.width * scale;
       canvas.height = img.height * scale;
       
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      // ML face detection FIRST (to get face bounding box)
+      const faceImg = new Image();
+      faceImg.src = canvas.toDataURL('image/jpeg', 0.9);
       
-      // Calculate metrics
-      const brightness = calculateBrightness(imageData);
-      const contrast = calculateContrast(imageData);
-      const sharpness = calculateSharpness(imageData);
-      const faceResult = detectFace(imageData);
+      await new Promise<void>((resolveImg) => {
+        faceImg.onload = () => resolveImg();
+        faceImg.onerror = () => resolveImg();
+      });
+      
+      const faceResult = await detectFaceML(faceImg);
+      
+      // Scale face dimensions back to original image size
+      const faceWidthPx = faceResult.widthPx / scale;
+      const faceHeightPx = faceResult.heightPx / scale;
+      
+      // Calculate ALL metrics on FACE CROP only (like backend does)
+      // This ensures brightness, contrast, and sharpness are measured on the face, not background
+      let brightness = 0;
+      let contrast = 0;
+      let sharpness = 0;
+      
+      if (faceResult.detected && faceResult.box) {
+        // Create canvas for face crop analysis
+        const box = faceResult.box;
+        // Add padding around face (20% each side) for better analysis
+        const padding = 0.2;
+        const padX = box.width * padding;
+        const padY = box.height * padding;
+        const cropX = Math.max(0, Math.floor((box.x - padX) * scale));
+        const cropY = Math.max(0, Math.floor((box.y - padY) * scale));
+        const cropW = Math.min(canvas.width - cropX, Math.ceil((box.width + padX * 2) * scale));
+        const cropH = Math.min(canvas.height - cropY, Math.ceil((box.height + padY * 2) * scale));
+        
+        if (cropW > 20 && cropH > 20) {
+          const faceImageData = ctx.getImageData(cropX, cropY, cropW, cropH);
+          brightness = calculateBrightness(faceImageData);
+          contrast = calculateContrast(faceImageData);
+          sharpness = calculateSharpness(faceImageData);
+        }
+      } else {
+        // No face detected - calculate on center region as fallback
+        const centerX = Math.floor(canvas.width * 0.25);
+        const centerY = Math.floor(canvas.height * 0.15);
+        const centerW = Math.floor(canvas.width * 0.5);
+        const centerH = Math.floor(canvas.height * 0.7);
+        const centerImageData = ctx.getImageData(centerX, centerY, centerW, centerH);
+        brightness = calculateBrightness(centerImageData);
+        contrast = calculateContrast(centerImageData);
+        sharpness = calculateSharpness(centerImageData);
+      }
       
       const issues: string[] = [];
       let score = 100;
       
+      // Brightness check
       if (brightness < minBrightness) {
-        issues.push('Image is too dark');
+        issues.push('Too dark - face a window or turn on lights');
         score -= 20;
       } else if (brightness > maxBrightness) {
-        issues.push('Image is too bright');
+        issues.push('Too bright - avoid direct sunlight or flash');
         score -= 20;
       }
       
+      // Contrast check
       if (contrast < minContrast) {
-        issues.push('Image has low contrast');
+        issues.push('Low contrast - need better lighting on face');
         score -= 15;
       }
       
+      // Sharpness check
       if (sharpness < minSharpness) {
-        issues.push('Image is blurry');
+        issues.push('Image is blurry - improve lighting and hold steady');
         score -= 25;
       }
       
+      // Face detection check
       if (requireFace && !faceResult.detected) {
-        issues.push('No face detected in image');
+        issues.push('No face detected - look directly at camera');
         score -= 30;
       }
       
-      if (requireFace && faceResult.size < minFaceSize) {
-        issues.push('Face is too small - move closer');
-        score -= 15;
+      // Face size check (in pixels)
+      if (requireFace && faceResult.detected) {
+        if (faceWidthPx < minFaceWidthPx || faceHeightPx < minFaceHeightPx) {
+          issues.push(`Face too small (${Math.round(faceWidthPx)}px) - get much closer!`);
+          score -= 15;
+        }
       }
       
       URL.revokeObjectURL(url);
@@ -279,6 +408,10 @@ export async function checkPhotoQuality(
           contrast,
           sharpness,
           faceDetected: faceResult.detected,
+          faceWidthPx,
+          faceHeightPx,
+          faceConfidence: faceResult.confidence,
+          // For backwards compatibility
           faceSize: faceResult.size,
         },
       });
@@ -304,12 +437,13 @@ export async function checkPhotoQuality(
  */
 export async function quickPhotoCheck(imageBlob: Blob): Promise<boolean> {
   const result = await checkPhotoQuality(imageBlob, {
-    minBrightness: 40,
+    minBrightness: 70,
     maxBrightness: 220,
-    minContrast: 20,
-    minSharpness: 50,
+    minContrast: 25,
+    minSharpness: 100,
     requireFace: true,
-    minFaceSize: 0.12,
+    minFaceWidthPx: 120, // Slightly more lenient for quick check
+    minFaceHeightPx: 120,
   });
   
   return result.passed;
@@ -366,5 +500,13 @@ export async function checkMultiplePhotos(
   };
 }
 
-
-
+/**
+ * Preload face detection models (call early to avoid delay on first photo)
+ */
+export async function preloadFaceModels(): Promise<void> {
+  try {
+    await loadFaceModels();
+  } catch (error) {
+    console.warn('Failed to preload face models:', error);
+  }
+}

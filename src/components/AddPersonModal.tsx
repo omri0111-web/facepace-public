@@ -633,7 +633,10 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                 instruction={angles.find(a => a.id === currentAngle)?.instruction || "Look straight at the camera"}
                 onCancel={() => setCaptureMode('upload')}
                 onComplete={() => {
-                  // User finished taking photos, stay in camera mode to show gallery
+                  // User clicked Finish after taking 4 photos - start enrollment
+                  if (photos.length >= 3) {
+                    startEnrollment();
+                  }
                 }}
                 onPhotoCaptured={(blob, quality) => {
                   const reader = new FileReader();
@@ -764,16 +767,8 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
               <Button onClick={handleClose} variant="outline" className="flex-1">
                 Cancel
               </Button>
-              {captureMode === 'camera' ? (
-                <Button 
-                  onClick={startEnrollment}
-                  disabled={photos.length < 3}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={photos.length < 3 ? `Need at least 3 photos (currently ${photos.length})` : ''}
-                >
-                  🚀 Start Enrollment ({photos.length} photos)
-                </Button>
-              ) : (
+              {/* For upload mode, show Start Enrollment button */}
+              {captureMode === 'upload' && (
                 <Button 
                   onClick={startEnrollment}
                   disabled={!canEnroll}
@@ -783,6 +778,7 @@ export function AddPersonModal({ isOpen, onClose, onAddPerson }: AddPersonModalP
                   🚀 Start Enrollment ({passingCount} accepted)
                 </Button>
               )}
+              {/* For camera mode, the Finish button in SmartCamera handles enrollment */}
             </div>
           </div>
         )}

@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, X, Upload, Check, AlertCircle, RefreshCw, Flashlight } from 'lucide-react';
 import { Button } from './ui/button';
-import { checkPhotoQuality, QualityCheckResult, getQualityFeedback } from '../utils/frontendQualityChecks';
+import { checkPhotoQuality, QualityCheckResult, getQualityFeedback, preloadFaceModels } from '../utils/frontendQualityChecks';
 import { cn } from './ui/utils';
 
 interface SmartCameraProps {
@@ -41,12 +41,17 @@ export function SmartCamera({
   // Detect if user is on mobile device
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   // Mobile devices need stricter face size requirements due to wider camera FOV
-  const minFaceSize = isMobile ? 0.38 : 0.32;
+  // Now using pixel-based thresholds for accurate ML face detection
+  // Maximum strictness: face must nearly fill the oval guide
+  const minFaceWidthPx = isMobile ? 350 : 300; // Maximum quality for recognition
+  const minFaceHeightPx = isMobile ? 350 : 300;
 
   // Initialize camera when component mounts or isOpen changes
   useEffect(() => {
     if (isOpen) {
       startCamera();
+      // Preload face detection models to avoid delay on first photo
+      preloadFaceModels();
     } else {
       stopCamera();
     }
@@ -141,16 +146,17 @@ export function SmartCamera({
     });
 
     // Strict capture requirements (frontend gate before backend):
-    // - Brighter, but not overexposed
+    // - Brighter, but not overexposed (stricter lighting)
     // - Strong contrast & sharpness
-    // - Face must be quite large in the frame
+    // - Face must have enough pixels for good recognition (ML detection)
     const result = await checkPhotoQuality(blob, {
-      minBrightness: 70,
-      maxBrightness: 180,
+      minBrightness: 90,
+      maxBrightness: 200,
       minContrast: 35,
-      minSharpness: 170, // slightly stricter than before for crisper photos
+      minSharpness: 100, // Same as backend threshold
       requireFace: true,
-      minFaceSize: minFaceSize, // Stricter on mobile (0.38) vs desktop (0.32)
+      minFaceWidthPx,  // ML face detection: min 150px desktop, 180px mobile
+      minFaceHeightPx,
     });
 
     return { blob, result };
@@ -224,12 +230,13 @@ export function SmartCamera({
 
     // Process uploaded file with the same strict capture requirements
     checkPhotoQuality(file, {
-      minBrightness: 70,
-      maxBrightness: 180,
+      minBrightness: 90,
+      maxBrightness: 200,
       minContrast: 35,
-      minSharpness: 170,
+      minSharpness: 100, // Same as backend threshold
       requireFace: true,
-      minFaceSize: minFaceSize, // Stricter on mobile (0.38) vs desktop (0.32)
+      minFaceWidthPx,  // ML face detection: min 150px desktop, 180px mobile
+      minFaceHeightPx,
     }).then(result => {
       setLastResult(result);
       setIsChecking(false);

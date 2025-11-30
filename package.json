@@ -34,6 +34,7 @@
             "clsx": "*",
             "cmdk": "^1.1.1",
             "embla-carousel-react": "^8.6.0",
+            "face-api.js": "^0.22.2",
             "input-otp": "^1.4.2",
             "lucide-react": "^0.487.0",
             "onnxruntime-web": "^1.23.0",
@@ -57,8 +58,8 @@
       "overrides": {
             "node-fetch": "2.6.7"
       },
-  "scripts": {
-    "dev": "vite --strictPort --port 3000 --host 127.0.0.1",
-    "build": "vite build --config vite.config.public.ts && mv build/index-public.html build/index.html"
-  }
+      "scripts": {
+            "dev": "vite --strictPort --port 3000 --host 127.0.0.1",
+            "build": "vite build --config vite.config.public.ts && mv build/index-public.html build/index.html"
+      }
 }
