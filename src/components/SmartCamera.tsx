@@ -320,36 +320,36 @@ export function SmartCamera({
                 />
               </svg>
               
-              {/* Result Feedback Overlay */}
+              {/* Result Feedback Overlay - Positioned below counter, clear readable text */}
               {lastResult && (
-                <div className="absolute top-[45%] left-0 right-0 text-center transform -translate-y-1/2 z-20">
+                <div className="absolute top-[55%] left-0 right-0 text-center transform -translate-y-1/2 z-20 px-4">
                   <div className={cn(
-                    "inline-flex flex-col items-center p-6 rounded-xl backdrop-blur-md shadow-2xl transform transition-all duration-300",
-                    lastResult.passed ? "bg-green-500/20 border border-green-500/50" : "bg-red-500/20 border border-red-500/50"
+                    "inline-flex flex-col items-center p-5 rounded-2xl shadow-2xl transform transition-all duration-300",
+                    lastResult.passed ? "bg-green-600/90 backdrop-blur-sm" : "bg-black/80 backdrop-blur-sm"
                   )}>
                     {lastResult.passed ? (
                       <>
-                        <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mb-3 shadow-lg">
-                          <Check className="w-10 h-10 text-white" />
+                        <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center mb-2 shadow-lg">
+                          <Check className="w-8 h-8 text-green-600" />
                         </div>
-                        <h3 className="text-2xl font-bold text-white mb-1">Perfect!</h3>
-                        <p className="text-green-200">Saving photo...</p>
+                        <h3 className="text-xl font-bold text-white mb-1">Perfect!</h3>
+                        <p className="text-green-100 text-sm">Saving photo...</p>
                       </>
                     ) : (
                       <>
-                        <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mb-3 shadow-lg">
-                          <X className="w-10 h-10 text-white" />
+                        <div className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center mb-2 shadow-lg">
+                          <X className="w-8 h-8 text-white" />
                         </div>
-                        <h3 className="text-2xl font-bold text-white mb-1">Try Again</h3>
-                        <div className="text-red-200 font-medium max-w-[250px] text-center">
+                        <h3 className="text-xl font-bold text-white mb-2">Try Again</h3>
+                        <div className="text-white font-medium max-w-[280px] text-center">
                           {lastResult.issues.length > 0 ? (
-                            <ul className="text-sm space-y-1">
+                            <ul className="text-sm space-y-1.5">
                               {lastResult.issues.map((issue, i) => (
-                                <li key={i}>• {issue}</li>
+                                <li key={i} className="text-white/90">• {issue}</li>
                               ))}
                             </ul>
                           ) : (
-                            <p>{getQualityFeedback(lastResult).replace('⚠️ ', '')}</p>
+                            <p className="text-sm text-white/90">{getQualityFeedback(lastResult).replace('⚠️ ', '')}</p>
                           )}
                         </div>
                       </>
@@ -435,65 +435,90 @@ export function SmartCamera({
             </p>
           </div>
 
-          {/* Capture / Finish Button - matches public UI, with stronger boundary and 3D effect */}
-          <div className="mb-2 flex justify-center -mt-4 relative z-30">
-            <div className="p-1.5 rounded-full bg-gradient-to-br from-blue-50 via-white to-blue-100 shadow-[0_10px_40px_rgba(59,130,246,0.4)] border border-blue-200">
-              {photoCount >= targetCount && onComplete ? (
-                <button
-                  onClick={onComplete}
-                  disabled={false}
-                  className={cn(
-                    "w-20 h-20 rounded-full border-[6px] flex items-center justify-center transition-all duration-300 focus:outline-none active:scale-95 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.1),0_4px_8px_rgba(0,0,0,0.1)] active:shadow-inner transform hover:-translate-y-0.5",
-                    "border-green-500 bg-gradient-to-b from-white to-green-50 hover:border-green-400 hover:shadow-[0_0_30px_rgba(34,197,94,0.6)]" 
+          {/* Capture / Finish Button - Big, bold, impossible to miss */}
+          <div className="mb-2 flex justify-center relative z-30">
+            {photoCount >= targetCount && onComplete ? (
+              /* Finish Button - Blue */
+              <button
+                onClick={onComplete}
+                className="w-24 h-24 rounded-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 flex items-center justify-center transition-all duration-200 active:scale-95 shadow-[0_8px_20px_rgba(59,130,246,0.5),inset_0_-4px_0_rgba(0,0,0,0.2)] border-4 border-white"
+              >
+                <span className="text-white font-bold text-lg drop-shadow-[0_2px_2px_rgba(0,0,0,0.3)]">Finish</span>
+              </button>
+            ) : (
+              /* Take Photo Button - Green with white ring, animated with pointing hands */
+              <>
+                <style>{`
+                  @keyframes bounceRight {
+                    0%, 100% { transform: translateX(0); }
+                    50% { transform: translateX(5px); }
+                  }
+                  @keyframes bounceLeft {
+                    0%, 100% { transform: translateX(0); }
+                    50% { transform: translateX(-5px); }
+                  }
+                  @keyframes pulseGlow {
+                    0%, 100% { box-shadow: 0 0 20px rgba(34,197,94,0.4); }
+                    50% { box-shadow: 0 0 35px rgba(34,197,94,0.8); }
+                  }
+                `}</style>
+                <div className="relative flex items-center gap-2">
+                  {/* Left pointing hand */}
+                  {!(isChecking || lastResult) && (
+                    <span className="text-2xl" style={{ animation: 'bounceRight 1s ease-in-out infinite' }}>👉</span>
                   )}
-                >
-                  <span className="text-green-600 font-bold text-sm">Finish</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handleCapture}
-                  disabled={isChecking || !!lastResult}
-                  className={cn(
-                    "w-20 h-20 rounded-full border-[6px] flex items-center justify-center transition-all duration-300 focus:outline-none active:scale-95 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.1),0_4px_8px_rgba(0,0,0,0.1)] active:shadow-inner transform hover:-translate-y-0.5",
-                    (isChecking || lastResult) 
-                      ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-80" 
-                      : "border-blue-500 bg-gradient-to-b from-white to-blue-50 hover:border-blue-400 hover:shadow-[0_0_30px_rgba(59,130,246,0.6)]"
+                  
+                  {/* Button container */}
+                  <div className="relative">
+                    {/* Pulsing glow rings */}
+                    {!(isChecking || lastResult) && (
+                      <>
+                        <div className="absolute -inset-4 rounded-full bg-green-400/30 animate-ping" />
+                        <div className="absolute -inset-2 rounded-full bg-green-400/20 animate-pulse" />
+                      </>
+                    )}
+                    {/* Outer white ring with shadow */}
+                    <div className="p-1.5 rounded-full bg-white shadow-[0_4px_25px_rgba(0,0,0,0.4)]">
+                      <button
+                        onClick={handleCapture}
+                        disabled={isChecking || !!lastResult}
+                        style={{
+                          animation: !(isChecking || lastResult) ? 'pulseGlow 1.5s ease-in-out infinite' : 'none'
+                        }}
+                        className={cn(
+                          "w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 border-4",
+                          (isChecking || lastResult) 
+                            ? "bg-gray-400 border-gray-300 cursor-not-allowed" 
+                            : "bg-green-500 hover:bg-green-600 active:bg-green-700 border-green-400"
+                        )}
+                      >
+                        <span className={cn(
+                          "font-bold text-sm drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]",
+                          (isChecking || lastResult) ? "text-gray-600" : "text-white"
+                        )}>
+                          {isChecking || lastResult ? 'Checking…' : 'Take photo'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Right pointing hand */}
+                  {!(isChecking || lastResult) && (
+                    <span className="text-2xl" style={{ animation: 'bounceLeft 1s ease-in-out infinite' }}>👈</span>
                   )}
-                >
-                  <span className="text-blue-600 font-bold text-sm drop-shadow-sm">
-                    {isChecking || lastResult ? 'Checking…' : 'Take photo'}
-                  </span>
-                </button>
-              )}
-            </div>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Quick Tips */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-2 mb-2 border border-blue-100">
-            <div className="text-[10px] font-semibold text-blue-900 mb-1">✨ Quick Tips:</div>
-            <div className="space-y-1 text-[10px] text-blue-800">
-              <div className="flex items-start gap-1.5">
-                <span className="text-xs">😐</span>
-                <span><strong>Neutral face</strong> - No smile</span>
-              </div>
-              <div className="flex items-start gap-1.5">
-                <span className="text-xs">🧐</span>
-                <span><strong>Get very close</strong> - Fill oval</span>
-              </div>
-              <div className="flex items-start gap-1.5">
-                <span className="text-xs">💡</span>
-                <span><strong>Good lighting</strong> - Face window</span>
-              </div>
-              <div className="flex items-start gap-1.5">
-                <span className="text-xs">✋</span>
-                <span><strong>Hold steady</strong> - Avoid blur</span>
-              </div>
+          {/* Quick Tips - Compact horizontal layout */}
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg px-3 py-1.5 border border-blue-100">
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] text-blue-800">
+              <span>😐 <strong>Neutral</strong></span>
+              <span>🧐 <strong>Close</strong></span>
+              <span>💡 <strong>Light</strong></span>
+              <span>✋ <strong>Steady</strong></span>
             </div>
-          </div>
-
-          {/* Warning */}
-          <div className="bg-amber-50 p-1.5 rounded-lg border border-amber-200 text-[9px] text-amber-800 font-medium">
-            ⚠️ Rejected photos don't count - retry instantly!
           </div>
         </div>
       </div>

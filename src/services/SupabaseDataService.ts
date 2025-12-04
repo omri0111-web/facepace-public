@@ -255,15 +255,25 @@ class SupabaseDataService {
   /**
    * Get signed URL for a person's photo (for private access)
    * Returns a temporary authenticated URL that expires in 1 hour
+   * Handles both full URLs and relative storage paths
    */
   async getPersonPhotoSignedUrl(photoUrl: string): Promise<string> {
     try {
-      // Extract the path from the URL
-      // URL format: https://xxx.supabase.co/storage/v1/object/public/face-photos/userId/personId/photo.jpg
-      const path = photoUrl.split('/face-photos/')[1]
-      if (!path) {
-        console.warn('Invalid photo URL format:', photoUrl)
-        return photoUrl
+      let path: string
+      
+      // Check if it's already a full URL or a relative path
+      if (photoUrl.startsWith('http')) {
+        // Extract the path from the full URL
+        // URL format: https://xxx.supabase.co/storage/v1/object/public/face-photos/userId/personId/photo.jpg
+        const extractedPath = photoUrl.split('/face-photos/')[1]
+        if (!extractedPath) {
+          console.warn('Invalid photo URL format:', photoUrl)
+          return photoUrl
+        }
+        path = extractedPath
+      } else {
+        // It's already a relative path like: userId/personId/photo.jpg
+        path = photoUrl
       }
       
       // Create a signed URL that expires in 1 hour (3600 seconds)
@@ -273,7 +283,11 @@ class SupabaseDataService {
       
       if (error) {
         console.warn('Failed to create signed URL:', error)
-        return photoUrl
+        // If signed URL fails, try returning a public URL instead
+        const { data: { publicUrl } } = supabase.storage
+          .from('face-photos')
+          .getPublicUrl(path)
+        return publicUrl
       }
       
       return data?.signedUrl || photoUrl

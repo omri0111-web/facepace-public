@@ -114,7 +114,7 @@ const EnrollmentInstructions = ({ onNext }: EnrollmentInstructionsProps) => {
     },
     {
       title: "Get Close",
-      description: "Bring the phone closer until your face fits the circle.",
+      description: "Bring the phone closer until your face fills the circle. The closer, the better!",
       icon: <ScanFace className="w-12 h-12 text-blue-500" />,
       color: "bg-blue-50 text-blue-600",
       animation: (
@@ -126,9 +126,9 @@ const EnrollmentInstructions = ({ onNext }: EnrollmentInstructionsProps) => {
            {/* Growing Face (Shared Shape) - Slow grow -> Hold -> Restart */}
            <g transform="translate(100, 100)">
               <g>
-                 {/* Scale: Small (0.4) -> Big (0.85) -> Hold -> Restart */}
-                 {/* 0-3s: Grow slow. 3-5s: Stay Big (V sign). 5-6s: Reset */}
-                 <animateTransform attributeName="transform" type="scale" values="0.4; 0.85; 0.85; 0.4" keyTimes="0; 0.5; 0.9; 1" dur="6s" repeatCount="indefinite" calcMode="linear" />
+                 {/* Scale: Medium (0.55) -> Big (0.9) -> Hold -> Restart */}
+                 {/* Face starts bigger so it never looks too small */}
+                 <animateTransform attributeName="transform" type="scale" values="0.55; 0.9; 0.9; 0.55" keyTimes="0; 0.5; 0.9; 1" dur="6s" repeatCount="indefinite" calcMode="linear" />
                  
                  <path d="M-40,-40 Q0,-80 40,-40 Q70,0 40,60 Q0,90 -40,60 Q-70,0 -40,-40" 
                        fill="#dbeafe" stroke="#1e40af" strokeWidth="3" vectorEffect="non-scaling-stroke" />
@@ -192,7 +192,7 @@ const EnrollmentInstructions = ({ onNext }: EnrollmentInstructionsProps) => {
     },
     {
       title: "Hold Steady",
-      description: "Keep your hand still to avoid blur. No motion.",
+      description: "Keep your phone still to avoid blur. A steady hand means a clear photo!",
       icon: <Smartphone className="w-12 h-12 text-green-500" />,
       color: "bg-green-50 text-green-600",
       animation: (
@@ -240,59 +240,53 @@ const EnrollmentInstructions = ({ onNext }: EnrollmentInstructionsProps) => {
   };
 
   return (
-    <div className="grid grid-rows-[auto_1fr_auto_auto] h-screen min-h-screen bg-white">
+    <div className="flex flex-col items-center justify-center h-screen min-h-screen bg-white px-6">
       
-      {/* Row 1: Top Header */}
-      <div className="w-full px-6 pt-20 pb-4">
-         <div className="flex items-center justify-between w-full max-w-md mx-auto">
-             {/* Progress Bars */}
-             <div className="flex gap-1.5 flex-1 mr-8">
-                {steps.map((_, i) => (
-                  <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${i === step ? 'w-12 bg-blue-600' : 'w-3 bg-gray-200'}`} />
-                ))}
-             </div>
-             {/* Big Step Counter */}
-             <span className="text-4xl font-bold text-gray-200 tracking-tight leading-none">
-               {step + 1}<span className="text-2xl text-gray-100">/{steps.length}</span>
-             </span>
-         </div>
-      </div>
-
-      {/* Row 2: Animation - Takes remaining space, centers content */}
-      <div className="flex items-center justify-center px-6">
-        <div className="w-[280px] h-[280px] flex items-center justify-center">
-           {currentStep.animation}
+      {/* All content grouped together, centered vertically */}
+      <div className="w-full max-w-md flex flex-col items-center">
+        
+        {/* Progress + Counter - Compact row */}
+        <div className="w-full flex items-center justify-between mb-4">
+          <div className="flex gap-1 flex-1 mr-4">
+            {steps.map((_, i) => (
+              <div key={i} className={`h-1 rounded-full transition-all duration-500 ${i === step ? 'w-10 bg-blue-600' : 'w-2 bg-gray-200'}`} />
+            ))}
+          </div>
+          <span className="text-lg font-semibold text-gray-400">
+            {step + 1}/{steps.length}
+          </span>
         </div>
-      </div>
 
-      {/* Row 3: Text */}
-      <div className="text-center space-y-2 px-6 py-4">
-        <h2 className="text-2xl font-bold text-gray-900">
+        {/* Animation - Fixed size for all pages */}
+        <div className="w-[300px] h-[300px] flex items-center justify-center mb-3">
+          {currentStep.animation}
+        </div>
+
+        {/* Text */}
+        <h2 className="text-2xl font-bold text-gray-900 text-center mb-1">
           {currentStep.title}
         </h2>
-        <p className="text-base text-gray-500 px-4">
+        <p className="text-sm text-gray-500 text-center mb-6">
           {currentStep.description}
         </p>
-      </div>
 
-      {/* Row 4: Footer - Button at bottom */}
-      <div className="w-full px-6 pb-10 pt-4">
-        <div className="flex gap-4 max-w-md mx-auto">
+        {/* Buttons */}
+        <div className="w-full flex gap-3">
           {step > 0 && (
             <button
               onClick={() => setStep(prev => prev - 1)}
-              className="w-16 h-16 flex items-center justify-center rounded-2xl border-2 border-gray-100 text-gray-500 hover:bg-gray-50 transition-all duration-200 active:scale-95"
+              className="w-14 h-14 flex items-center justify-center rounded-2xl border-2 border-gray-100 text-gray-500 hover:bg-gray-50 transition-all duration-200 active:scale-95"
             >
-              <ArrowLeft className="w-6 h-6" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
           )}
           
           <button
             onClick={handleNext}
-            className="flex-1 h-16 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition-all duration-200 flex items-center justify-center gap-3 text-lg shadow-lg shadow-blue-200 active:scale-95"
+            className="flex-1 h-14 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition-all duration-200 flex items-center justify-center gap-2 text-base shadow-lg shadow-blue-200 active:scale-95"
           >
             {isLastStep ? "I'm Ready" : "Next Tip"} 
-            {!isLastStep && <ArrowRight className="w-6 h-6" />}
+            {!isLastStep && <ArrowRight className="w-5 h-5" />}
           </button>
         </div>
       </div>

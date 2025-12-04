@@ -187,6 +187,12 @@ export function PeoplePanel({ isOpen, onClose, people, setPeople, groups, setGro
   const getPhotoDisplayUrl = useCallback(async (photoPath: string) => {
     if (!photoPath) return '';
     const trimmed = photoPath.trim();
+    
+    // If it's already a full Supabase public URL, return it directly (bucket is now public)
+    if (trimmed.includes('/storage/v1/object/public/face-photos/')) {
+      return trimmed;
+    }
+    
     const looksLikeBackendPath = trimmed.includes('/person/photo/') || !trimmed.includes('/');
 
     if (looksLikeBackendPath) {
